@@ -1,1 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Demo</title>
+<style>
+body { margin: 0; overflow: hidden; }
+</style>
+</head>
+<body>
 
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 5000);
+camera.position.set(20, 15, 20);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1, 0);
+
+const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3e7a3e, 0.5);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xffeedd, 2.5);
+sun.position.set(30, 40, 15);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 100;
+sun.shadow.camera.left = -50;
+sun.shadow.camera.right = 50;
+sun.shadow.camera.top = 50;
+sun.shadow.camera.bottom = -50;
+scene.add(sun);
+scene.add(sun.target);
+
+const tLoader = new THREE.TextureLoader();
+function makeTex(p, r = 20) {
+  const t = tLoader.load(p);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(r, r);
+  t.anisotropy = 4;
+  return t;
+}
+
+const loader = new GLTFLoader();
+let terrainRoot = null;
+let charGroup = null;
+let charModel = null;
+let mixer = null;
+const anims = {};
+let curAnim = null;
+let grounded = true;
+let jumping = false;
+let rolling = false;
+let vertVel = 0;
+const keys = {};
+const HEIGHT = 0.05;
+
+// Load terrain
+loader.load('heightmap1.glb', (g) => {
+  terrainRoot = g.scene;
+  g.scene.traverse(c => {
+    if (c.isMesh) {
+      c.material = new THREE.MeshStandardMaterial({
+        map: makeTex('Ground033_1K-JPG_Color.jpg'),
+        normalMap: makeTex('Ground033_1K-JPG_NormalGL.jpg'),
+        roughnessMap: makeTex('Ground033_1K-JPG_Roughness.jpg'),
+        aoMap: makeTex('Ground033_1K-JPG_AmbientOcclusion.jpg'),
+        color: 0xaaaaaa,
+        metalness: 0,
+        roughness: 0.9,
+      });
+      c.receiveShadow = true;
+    }
+  });
+  scene.add(g.scene);
+
+  const box = new THREE.Box3().setFromObject(g.scene);
+  const s = box.getSize(new THREE.Vector3());
+  const half = Math.max(s.x, s.z) / 2 + 10;
+  sun.shadow.camera.left = -half;
+  sun.shadow.camera.right = half;
+  sun.shadow.camera.top = half;
+  sun.shadow.camera.bottom = -half;
+  sun.shadow.camera.far = s.y + 100;
+  sun.shadow.camera.updateProjectionMatrix();
+
+  scene.updateMatrixWorld(true);
+  maybeStart();
+});
+
+// Load character
+loader.load('cac-1783902065521.glb', (g) => {
+  charModel = g.scene;
+  charModel.scale.set(0.05, 0.05, 0.05);
+  charGroup = new THREE.Group();
+  charGroup.add(charModel);
+  charGroup.position.set(0, 0, 0);
+  scene.add(charGroup);
+
+  const rootNames = new Set();
+  g.scene.children.forEach(c => rootNames.add(c.name));
+
+  mixer = new THREE.AnimationMixer(charModel);
+
+  g.animations.forEach(c => {
+    const n = c.name.toLowerCase();
+    const tracks = c.tracks.filter(t => {
+      const dot = t.name.lastIndexOf('.');
+      if (dot < 0) return true;
+      const node = t.name.substring(0, dot);
+      const prop = t.name.substring(dot);
+      if ((prop === '.position' || prop === '.scale') && rootNames.has(node)) return false;
+      return true;
+    });
+    const clip = new THREE.AnimationClip(c.name, c.duration, tracks);
+    if (n.includes('idle')) anims.idle = clip;
+    else if (n.includes('walk')) anims.walk = clip;
+    else if (n.includes('jump')) anims.jump = clip;
+    else if (n.includes('roll')) anims.roll = clip;
+    else anims[n] = clip;
+  });
+
+  playAnim('idle');
+  maybeStart();
+});
+
+function playAnim(name) {
+  if (!mixer || !anims[name] || curAnim === name) return;
+  if (curAnim && anims[curAnim]) mixer.clipAction(anims[curAnim]).fadeOut(0.2);
+  const a = mixer.clipAction(anims[name]);
+  a.reset();
+  a.setLoop(name === 'jump' || name === 'roll' ? THREE.LoopOnce : THREE.LoopRepeat);
+  if (name === 'jump' || name === 'roll') a.clampWhenFinished = true;
+  a.fadeIn(0.2).play();
+  curAnim = name;
+}
+
+let started = false;
+function maybeStart() {
+  if (started) return;
+  if (!terrainRoot || !charGroup) return;
+  started = true;
+
+  const h = getHeight(0, 0);
+  charGroup.position.y = (h > -Infinity ? h : 0) + HEIGHT;
+  grounded = true;
+
+  controls.target.set(charGroup.position.x, charGroup.position.y + 0.8, charGroup.position.z);
+  controls.update();
+
+  document.addEventListener('keydown', (e) => {
+    keys[e.code] = true;
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (grounded && !jumping) {
+        jumping = true;
+        grounded = false;
+        vertVel = 8;
+        playAnim('jump');
+      }
+    }
+    if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+      e.preventDefault();
+      if (grounded && anims.roll && !rolling) {
+        rolling = true;
+        const a = mixer.clipAction(anims.roll);
+        a.reset().setLoop(THREE.LoopOnce).clampWhenFinished = true;
+        if (curAnim && anims[curAnim]) mixer.clipAction(anims[curAnim]).fadeOut(0.15);
+        a.fadeIn(0.15).play();
+        curAnim = 'roll';
+        const f = () => { rolling = false; a.removeEventListener('finished', f); };
+        a.addEventListener('finished', f);
+      }
+    }
+  });
+  document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+  loop();
+}
+
+const _rc = new THREE.Raycaster();
+const _down = new THREE.Vector3(0, -1, 0);
+const _origin = new THREE.Vector3();
+
+function getHeight(x, z) {
+  if (!terrainRoot) return -Infinity;
+  _origin.set(x, 2000, z);
+  _rc.set(_origin, _down);
+  const h = _rc.intersectObject(terrainRoot, true);
+  return h.length > 0 ? h[0].point.y : -Infinity;
+}
+
+const clock = new THREE.Clock();
+const _fwd = new THREE.Vector3();
+const _side = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _tgt = new THREE.Vector3();
+
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (charGroup && mixer && terrainRoot) {
+    const fwd = !!keys['KeyW'], bwd = !!keys['KeyS'];
+    const lft = !!keys['KeyA'], rgt = !!keys['KeyD'];
+
+    camera.getWorldDirection(_fwd);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 0.001) _fwd.z = -1;
+    _fwd.normalize();
+
+    _side.crossVectors(_fwd, new THREE.Vector3(0, 1, 0)).normalize();
+
+    _dir.set(0, 0, 0);
+    if (fwd) _dir.add(_fwd);
+    if (bwd) _dir.sub(_fwd);
+    if (rgt) _dir.add(_side);
+    if (lft) _dir.sub(_side);
+
+    const moving = _dir.lengthSq() > 0;
+    if (moving) _dir.normalize();
+
+    const p = charGroup.position;
+    const nx = p.x + _dir.x * 3 * dt;
+    const nz = p.z + _dir.z * 3 * dt;
+
+    const gh = getHeight(nx, nz);
+
+    if (gh > -Infinity) {
+      const ty = gh + HEIGHT;
+      if (grounded) {
+        p.y = ty;
+      } else {
+        vertVel += -30 * dt;
+        p.y += vertVel * dt;
+        if (p.y <= ty) { p.y = ty; grounded = true; vertVel = 0; jumping = false; }
+      }
+      p.x = nx;
+      p.z = nz;
+    } else {
+      p.x = nx;
+      p.z = nz;
+      if (!grounded) { vertVel += -30 * dt; p.y += vertVel * dt; }
+      if (p.y < -10) { p.y = -10; grounded = true; vertVel = 0; jumping = false; }
+    }
+
+    if (moving) charModel.rotation.y = Math.atan2(_dir.x, _dir.z);
+    if (grounded && !rolling) playAnim(moving ? 'walk' : 'idle');
+    mixer.update(dt);
+  }
+
+  if (charGroup) {
+    _tgt.copy(charGroup.position).add(new THREE.Vector3(0, 0.8, 0));
+    controls.target.lerp(_tgt, 0.08);
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
