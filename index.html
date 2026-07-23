@@ -5,10 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Demo</title>
 <style>
-body { margin: 0; overflow: hidden; }
+body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
+#tab-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+  display: flex; gap: 0; background: rgba(0,0,0,0.5);
+  padding: 6px 12px; align-items: center;
+}
+#tab-bar button {
+  background: transparent; color: #ccc; border: none;
+  padding: 6px 18px; cursor: pointer; font-size: 13px;
+  border-radius: 4px; transition: background 0.15s, color 0.15s;
+}
+#tab-bar button:hover { background: rgba(255,255,255,0.1); color: #fff; }
+#tab-bar button.active { background: rgba(255,255,255,0.18); color: #fff; font-weight: 600; }
 </style>
 </head>
 <body>
+
+<div id="tab-bar">
+  <button id="tab-scene" class="active">Scene</button>
+  <button id="tab-heightmap">Heightmap</button>
+</div>
 
 <script type="importmap">
 {
@@ -160,6 +177,36 @@ function playAnim(name) {
   curAnim = name;
 }
 
+// Tab switching
+let activeTab = 'scene';
+
+function switchTab(tab) {
+  document.querySelectorAll('#tab-bar button').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  activeTab = tab;
+
+  if (tab === 'scene') {
+    if (charGroup) charGroup.visible = true;
+    camera.position.set(20, 15, 20);
+    controls.target.set(0, 1, 0);
+    controls.update();
+  } else {
+    if (charGroup) charGroup.visible = false;
+    if (terrainRoot) {
+      const box = new THREE.Box3().setFromObject(terrainRoot);
+      const c = box.getCenter(new THREE.Vector3());
+      const s = box.getSize(new THREE.Vector3());
+      const d = Math.max(s.x, s.y, s.z) * 1.4;
+      camera.position.set(c.x + d * 0.7, c.y + d * 0.6, c.z + d);
+      controls.target.copy(c);
+      controls.update();
+    }
+  }
+}
+
+document.getElementById('tab-scene').addEventListener('click', () => switchTab('scene'));
+document.getElementById('tab-heightmap').addEventListener('click', () => switchTab('heightmap'));
+
 let started = false;
 function maybeStart() {
   if (started) return;
@@ -174,6 +221,7 @@ function maybeStart() {
   controls.update();
 
   document.addEventListener('keydown', (e) => {
+    if (activeTab !== 'scene') return;
     keys[e.code] = true;
     if (e.code === 'Space') {
       e.preventDefault();
@@ -224,7 +272,7 @@ const _tgt = new THREE.Vector3();
 function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
-  if (charGroup && mixer && terrainRoot) {
+  if (activeTab === 'scene' && charGroup && mixer && terrainRoot) {
     const fwd = !!keys['KeyW'], bwd = !!keys['KeyS'];
     const lft = !!keys['KeyA'], rgt = !!keys['KeyD'];
 
@@ -273,7 +321,7 @@ function loop() {
     mixer.update(dt);
   }
 
-  if (charGroup) {
+  if (activeTab === 'scene' && charGroup) {
     _tgt.copy(charGroup.position).add(new THREE.Vector3(0, 0.8, 0));
     controls.target.lerp(_tgt, 0.08);
   }
