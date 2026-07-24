@@ -5,27 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Demo</title>
 <style>
-body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
-#tab-bar {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
-  display: flex; gap: 0; background: rgba(0,0,0,0.5);
-  padding: 6px 12px; align-items: center;
-}
-#tab-bar button {
-  background: transparent; color: #ccc; border: none;
-  padding: 6px 18px; cursor: pointer; font-size: 13px;
-  border-radius: 4px; transition: background 0.15s, color 0.15s;
-}
-#tab-bar button:hover { background: rgba(255,255,255,0.1); color: #fff; }
-#tab-bar button.active { background: rgba(255,255,255,0.18); color: #fff; font-weight: 600; }
+body { margin: 0; overflow: hidden; }
 </style>
 </head>
 <body>
-
-<div id="tab-bar">
-  <button id="tab-scene" class="active">Scene</button>
-  <button id="tab-heightmap">Heightmap</button>
-</div>
 
 <script type="importmap">
 {
@@ -39,6 +22,7 @@ body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const scene = new THREE.Scene();
@@ -56,6 +40,9 @@ document.body.prepend(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 1, 0);
+
+const grid = new THREE.GridHelper(200, 40, 0xffffff, 0x888888);
+scene.add(grid);
 
 const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3e7a3e, 0.5);
 scene.add(hemi);
@@ -84,6 +71,7 @@ function makeTex(p, r = 20) {
 }
 
 const loader = new GLTFLoader();
+loader.setDRACOLoader(new DRACOLoader());
 let terrainRoot = null;
 let charGroup = null;
 let charModel = null;
@@ -100,39 +88,44 @@ const HEIGHT = 0.05;
 // Load terrain
 loader.load('heightmap1.glb', (g) => {
   terrainRoot = g.scene;
+  console.log('heightmap1.glb loaded', g);
+  console.log('scene children:', g.scene.children.length);
+  g.scene.traverse(c => console.log('  node:', c.type, c.name, 'pos:', c.position.toArray().map(v=>v.toFixed(2)), 'scale:', c.scale.toArray().map(v=>v.toFixed(2))));
+
   g.scene.traverse(c => {
     if (c.isMesh) {
-      c.material = new THREE.MeshStandardMaterial({
-        map: makeTex('Ground033_1K-JPG_Color.jpg'),
-        normalMap: makeTex('Ground033_1K-JPG_NormalGL.jpg'),
-        roughnessMap: makeTex('Ground033_1K-JPG_Roughness.jpg'),
-        aoMap: makeTex('Ground033_1K-JPG_AmbientOcclusion.jpg'),
-        color: 0xaaaaaa,
-        metalness: 0,
-        roughness: 0.9,
-      });
+      const pos = c.geometry.attributes.position;
+      console.log('  MESH:', c.name, 'verts:', pos.count, 'bbox:', new THREE.Box3().setFromObject(c).getSize(new THREE.Vector3()).toArray().map(v=>v.toFixed(2)));
       c.receiveShadow = true;
     }
   });
+
   scene.add(g.scene);
 
   const box = new THREE.Box3().setFromObject(g.scene);
   const s = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  console.log('terrain total box size:', s.toArray().map(v=>v.toFixed(2)), 'center:', center.toArray().map(v=>v.toFixed(2)));
+
+  camera.position.set(center.x + Math.max(s.x, s.z) * 1.2, center.y + s.y * 0.8, center.z + Math.max(s.x, s.z) * 1.2);
+  controls.target.copy(center);
+  controls.update();
+
   const half = Math.max(s.x, s.z) / 2 + 10;
   sun.shadow.camera.left = -half;
   sun.shadow.camera.right = half;
   sun.shadow.camera.top = half;
   sun.shadow.camera.bottom = -half;
-  sun.shadow.camera.far = s.y + 100;
+  sun.shadow.camera.far = Math.max(s.y * 2, 100);
   sun.shadow.camera.updateProjectionMatrix();
 
   scene.updateMatrixWorld(true);
-  maybeStart();
-});
+}, undefined, (e) => console.error('heightmap1.glb error:', e));
 
 // Load character
 loader.load('cac-1783902065521.glb', (g) => {
   charModel = g.scene;
+  console.log('cac-1783902065521.glb loaded');
   charModel.scale.set(0.05, 0.05, 0.05);
   charGroup = new THREE.Group();
   charGroup.add(charModel);
@@ -163,8 +156,8 @@ loader.load('cac-1783902065521.glb', (g) => {
   });
 
   playAnim('idle');
-  maybeStart();
-});
+  initChar();
+}, undefined, (e) => console.error('cac-1783902065521.glb error:', e));
 
 function playAnim(name) {
   if (!mixer || !anims[name] || curAnim === name) return;
@@ -177,78 +170,40 @@ function playAnim(name) {
   curAnim = name;
 }
 
-// Tab switching
-let activeTab = 'scene';
-
-function switchTab(tab) {
-  document.querySelectorAll('#tab-bar button').forEach(b => b.classList.remove('active'));
-  document.getElementById(`tab-${tab}`).classList.add('active');
-  activeTab = tab;
-
-  if (tab === 'scene') {
-    if (charGroup) charGroup.visible = true;
-    camera.position.set(20, 15, 20);
-    controls.target.set(0, 1, 0);
-    controls.update();
-  } else {
-    if (charGroup) charGroup.visible = false;
-    if (terrainRoot) {
-      const box = new THREE.Box3().setFromObject(terrainRoot);
-      const c = box.getCenter(new THREE.Vector3());
-      const s = box.getSize(new THREE.Vector3());
-      const d = Math.max(s.x, s.y, s.z) * 1.4;
-      camera.position.set(c.x + d * 0.7, c.y + d * 0.6, c.z + d);
-      controls.target.copy(c);
-      controls.update();
+document.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (grounded && !jumping && charGroup) {
+      jumping = true;
+      grounded = false;
+      vertVel = 8;
+      playAnim('jump');
     }
   }
-}
+  if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+    e.preventDefault();
+    if (grounded && anims.roll && !rolling && mixer) {
+      rolling = true;
+      const a = mixer.clipAction(anims.roll);
+      a.reset().setLoop(THREE.LoopOnce).clampWhenFinished = true;
+      if (curAnim && anims[curAnim]) mixer.clipAction(anims[curAnim]).fadeOut(0.15);
+      a.fadeIn(0.15).play();
+      curAnim = 'roll';
+      const f = () => { rolling = false; a.removeEventListener('finished', f); };
+      a.addEventListener('finished', f);
+    }
+  }
+});
+document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-document.getElementById('tab-scene').addEventListener('click', () => switchTab('scene'));
-document.getElementById('tab-heightmap').addEventListener('click', () => switchTab('heightmap'));
-
-let started = false;
-function maybeStart() {
-  if (started) return;
-  if (!terrainRoot || !charGroup) return;
-  started = true;
-
+function initChar() {
+  if (!terrainRoot) return;
   const h = getHeight(0, 0);
   charGroup.position.y = (h > -Infinity ? h : 0) + HEIGHT;
   grounded = true;
-
   controls.target.set(charGroup.position.x, charGroup.position.y + 0.8, charGroup.position.z);
   controls.update();
-
-  document.addEventListener('keydown', (e) => {
-    if (activeTab !== 'scene') return;
-    keys[e.code] = true;
-    if (e.code === 'Space') {
-      e.preventDefault();
-      if (grounded && !jumping) {
-        jumping = true;
-        grounded = false;
-        vertVel = 8;
-        playAnim('jump');
-      }
-    }
-    if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
-      e.preventDefault();
-      if (grounded && anims.roll && !rolling) {
-        rolling = true;
-        const a = mixer.clipAction(anims.roll);
-        a.reset().setLoop(THREE.LoopOnce).clampWhenFinished = true;
-        if (curAnim && anims[curAnim]) mixer.clipAction(anims[curAnim]).fadeOut(0.15);
-        a.fadeIn(0.15).play();
-        curAnim = 'roll';
-        const f = () => { rolling = false; a.removeEventListener('finished', f); };
-        a.addEventListener('finished', f);
-      }
-    }
-  });
-  document.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-  loop();
 }
 
 const _rc = new THREE.Raycaster();
@@ -269,10 +224,12 @@ const _side = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _tgt = new THREE.Vector3();
 
+loop();
+
 function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
-  if (activeTab === 'scene' && charGroup && mixer && terrainRoot) {
+  if (charGroup && mixer && terrainRoot) {
     const fwd = !!keys['KeyW'], bwd = !!keys['KeyS'];
     const lft = !!keys['KeyA'], rgt = !!keys['KeyD'];
 
@@ -321,7 +278,7 @@ function loop() {
     mixer.update(dt);
   }
 
-  if (activeTab === 'scene' && charGroup) {
+  if (charGroup) {
     _tgt.copy(charGroup.position).add(new THREE.Vector3(0, 0.8, 0));
     controls.target.lerp(_tgt, 0.08);
   }
