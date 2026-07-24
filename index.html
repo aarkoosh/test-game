@@ -40,7 +40,7 @@ const CROSSFADE = 0.25;
 const WALK_SPEED = 120;
 const ROLL_SPEED = 260;
 const ROTATION_LERP = 10;
-const TERRAIN_SIZE = 500000;
+const TERRAIN_SIZE = 950000;
 const GRID_SIZE = TERRAIN_SIZE * 2;
 const FLOOR_BOUND = GRID_SIZE / 2 - 20;
 
@@ -71,7 +71,7 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.45));
 const sun = new THREE.DirectionalLight(0xffffff, 1.1);
 sun.position.set(120, 220, 160);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(16384, 16384);
 sun.shadow.camera.near = 1;
 sun.shadow.camera.far = TERRAIN_SIZE * 2;
 sun.shadow.camera.left = -FLOOR_BOUND;
@@ -262,6 +262,18 @@ dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/
 const loader = new GLTFLoader();
 loader.setDRACOLoader(dracoLoader);
 
+const TEXTURE_SETS = {
+  ground033: {
+    paths: {
+      map: './Ground033_1K-JPG_Color.jpg',
+      normalMap: './Ground033_1K-JPG_NormalGL.jpg',
+      displacementMap: './Ground033_1K-JPG_Displacement.jpg',
+      roughnessMap: './Ground033_1K-JPG_Roughness.jpg',
+      aoMap: './Ground033_1K-JPG_AmbientOcclusion.jpg',
+    },
+  },
+};
+
 const assetList = [
   { name: 'cac-1783902065521.glb', loaded: 0, total: 0, done: false, phase: 'waiting' },
   { name: 'heightmap1.glb', loaded: 0, total: 0, done: false, phase: 'waiting' },
@@ -332,9 +344,35 @@ async function loadAll() {
     assetList[1].phase = '100%';
     renderStatus();
     const hRoot = hmap.scene;
+
+    const texLoader = new THREE.TextureLoader();
+    const texPaths = TEXTURE_SETS.ground033.paths;
+    const [map, normalMap, displacementMap, roughnessMap, aoMap] = await Promise.all([
+      texLoader.loadAsync(texPaths.map),
+      texLoader.loadAsync(texPaths.normalMap),
+      texLoader.loadAsync(texPaths.displacementMap),
+      texLoader.loadAsync(texPaths.roughnessMap),
+      texLoader.loadAsync(texPaths.aoMap),
+    ]);
+    map.colorSpace = THREE.SRGBColorSpace;
+    for (const t of [map, normalMap, displacementMap, roughnessMap, aoMap]) {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(256, 256);
+    }
+
     hRoot.traverse((child) => {
       if (!child.isMesh || !child.geometry) return;
-      child.material = new THREE.MeshStandardMaterial({ color: 0x44aa88, roughness: 0.8, metalness: 0 });
+      const geo = child.geometry;
+      const mat = child.material;
+      if (!geo.attributes.uv2) geo.setAttribute('uv2', geo.attributes.uv.clone());
+      // add ground033 textures on top of the original material to preserve baked shadows
+      mat.map = map;
+      mat.normalMap = normalMap;
+      mat.roughnessMap = roughnessMap;
+      mat.aoMap = aoMap;
+      mat.roughness = 0.8;
+      mat.metalness = 0;
+      mat.needsUpdate = true;
       child.receiveShadow = true;
       child.raycast = acceleratedRaycast;
       child.geometry.computeBoundsTree = computeBoundsTree;
