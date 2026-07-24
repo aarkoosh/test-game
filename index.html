@@ -23,7 +23,8 @@ canvas{display:block;}
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.6/build/index.module.js"
   }
 }
 </script>
@@ -32,13 +33,15 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
 const EXCLUDED_CLIP = 'T-Pose (No Animation)';
 const CROSSFADE = 0.25;
 const WALK_SPEED = 120;
 const ROLL_SPEED = 260;
 const ROTATION_LERP = 10;
-const GRID_SIZE = 16000;
+const TERRAIN_SIZE = 500000;
+const GRID_SIZE = TERRAIN_SIZE * 2;
 const FLOOR_BOUND = GRID_SIZE / 2 - 20;
 
 const loadingEl = document.getElementById('loading');
@@ -52,7 +55,7 @@ function setStatus(text, isError) {
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x444466);
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, TERRAIN_SIZE * 3);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
@@ -70,7 +73,7 @@ sun.position.set(120, 220, 160);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.near = 1;
-sun.shadow.camera.far = 2400;
+sun.shadow.camera.far = TERRAIN_SIZE * 2;
 sun.shadow.camera.left = -FLOOR_BOUND;
 sun.shadow.camera.right = FLOOR_BOUND;
 sun.shadow.camera.top = FLOOR_BOUND;
@@ -83,13 +86,31 @@ const fill = new THREE.DirectionalLight(0x8899bb, 0.35);
 fill.position.set(-120, 140, -80);
 scene.add(fill);
 
-const grid = new THREE.GridHelper(GRID_SIZE, 40, 0x555555, 0x333333);
-grid.position.y = 0.5;
-scene.add(grid);
 
 const clock = new THREE.Clock();
 const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
 let character = null;
+
+// ---------- Terrain collision ----------
+
+const terrainColliders = [];
+const _ray = new THREE.Raycaster();
+const _rayOrigin = new THREE.Vector3();
+const _rayDir = new THREE.Vector3(0, -1, 0);
+let _lastSampleX = 0, _lastSampleZ = 0;
+let _sampleFrameCount = 0;
+const SAMPLE_FRAME_INTERVAL = 4;
+const SAMPLE_MOVE_THRESHOLD_SQ = 1600;
+
+function sampleTerrainHeight(x, z) {
+  if (terrainColliders.length === 0) return null;
+  _rayOrigin.set(x, 100000, z);
+  _ray.set(_rayOrigin, _rayDir);
+  _ray.far = 200000;
+  const hits = _ray.intersectObjects(terrainColliders, false);
+  if (hits.length > 0) return hits[0].point.y;
+  return null;
+}
 
 // ---------- Helpers ----------
 
@@ -209,8 +230,8 @@ function followCamera() {
   const pos = character.group.position;
   const targetY = character.height * 0.4;
   controls.target.set(pos.x, pos.y + targetY, pos.z);
-  controls.minDistance = character.height * 0.8;
-  controls.maxDistance = character.height * 12;
+  controls.minDistance = 5;
+  controls.maxDistance = TERRAIN_SIZE * 2;
   controls.update();
 }
 
@@ -295,8 +316,8 @@ async function loadAll() {
 
     character = { group, mixer, actions, height, state: 'idle', oneShot: null, currentAction: null, rollDir: new THREE.Vector3() };
     setGameplayState('idle');
+    camera.position.set(0, height * 2, height * 5);
     followCamera();
-    camera.lookAt(0, height * 0.4, 0);
     controls.update();
 
     // heightmap
@@ -315,17 +336,25 @@ async function loadAll() {
       if (!child.isMesh || !child.geometry) return;
       child.material = new THREE.MeshStandardMaterial({ color: 0x44aa88, roughness: 0.8, metalness: 0 });
       child.receiveShadow = true;
+      child.raycast = acceleratedRaycast;
+      child.geometry.computeBoundsTree = computeBoundsTree;
+      child.geometry.disposeBoundsTree = disposeBoundsTree;
+      child.geometry.computeBoundsTree();
+      terrainColliders.push(child);
     });
     const hBox = new THREE.Box3().setFromObject(hRoot);
     const hSize = hBox.getSize(new THREE.Vector3());
-    const s = 15000 / Math.max(hSize.x, hSize.z);
+    const s = TERRAIN_SIZE / Math.max(hSize.x, hSize.z);
     hRoot.scale.set(s, s, s);
     hRoot.position.set(
-      -(hBox.min.x + hSize.x * 0.5) * s,
+      -(hBox.min.x + hBox.max.x) * 0.5 * s,
       -hBox.min.y * s,
-      -(hBox.min.z + hSize.z * 0.5) * s
+      -(hBox.min.z + hBox.max.z) * 0.5 * s
     );
+    hRoot.updateWorldMatrix(true, true);
     scene.add(hRoot);
+    const h = sampleTerrainHeight(character.group.position.x, character.group.position.z);
+    if (h !== null) character.group.position.y = h;
     renderStatus();
   } catch (err) {
     console.error(err);
@@ -342,6 +371,14 @@ function loop() {
   const delta = Math.min(clock.getDelta(), 0.05);
   character.mixer.update(delta);
   updateGameplay(delta);
+  _sampleFrameCount++;
+  const pos = character.group.position;
+  const dx = pos.x - _lastSampleX;
+  const dz = pos.z - _lastSampleZ;
+  if ((_sampleFrameCount & (SAMPLE_FRAME_INTERVAL - 1)) === 0 || dx * dx + dz * dz > SAMPLE_MOVE_THRESHOLD_SQ) {
+    const h = sampleTerrainHeight(pos.x, pos.z);
+    if (h !== null) { pos.y = h; _lastSampleX = pos.x; _lastSampleZ = pos.z; }
+  }
   followCamera();
   renderer.render(scene, camera);
 }

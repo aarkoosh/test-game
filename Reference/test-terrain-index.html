@@ -1,0 +1,1789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terrain Editor</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:#87ceeb;}
+canvas{display:block;width:100%;height:100%;}
+canvas.grab{cursor:grab;}
+canvas.grabbing{cursor:grabbing;}
+#status{
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:#1a1510;color:rgba(255,255,255,0.5);font:14px/1.5 system-ui,sans-serif;
+  pointer-events:none;transition:opacity .3s;z-index:20;
+}
+#status.hidden{opacity:0;}
+#status.error{color:#f87171;}
+#panel{
+  position:fixed;top:16px;right:16px;z-index:10;
+  padding:14px 16px;border-radius:12px;width:280px;
+  max-height:calc(100vh - 32px);overflow-y:auto;
+  background:rgba(255,255,255,0.08);
+  backdrop-filter:blur(14px) saturate(140%);
+  -webkit-backdrop-filter:blur(14px) saturate(140%);
+  border:1px solid rgba(255,255,255,0.14);
+  color:rgba(255,255,255,0.85);font:13px/1.4 system-ui,sans-serif;
+}
+#panel label{display:block;margin-bottom:8px;font-weight:500;}
+#panel input[type=range]{width:100%;accent-color:#64b5f6;}
+#panel .val{display:block;margin-top:4px;margin-bottom:12px;font-size:12px;color:rgba(255,255,255,0.5);}
+#panel .section{margin-bottom:14px;}
+#panel .section-title{font-size:13px;font-weight:600;letter-spacing:0.04em;color:#fff;cursor:pointer;user-select:none;padding:8px 0;transition:color .2s;display:flex;justify-content:space-between;align-items:center;}
+#panel .section-title:hover{color:rgba(255,255,255,0.75);}
+#panel .section-title::after{content:'▾';font-size:14px;transition:transform .3s ease;color:rgba(255,255,255,0.5);}
+#panel .section.open .section-title::after{transform:rotate(-180deg);}
+#panel .section-content{display:none;}
+#panel .section.open .section-content{display:block;}
+#texToggle{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;}
+.tex-btn{
+  flex:1 1 calc(50% - 3px);padding:8px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.6);
+  font:500 11px/1.2 system-ui,sans-serif;cursor:pointer;
+  transition:background .2s,color .2s,border-color .2s;
+}
+.tex-btn:hover{color:rgba(255,255,255,0.9);}
+.tex-btn.active{
+  background:rgba(100,181,246,0.18);border-color:rgba(100,181,246,0.45);color:#fff;
+}
+.slider-row{margin-bottom:10px;}
+.slider-row label{margin-bottom:4px;font-size:12px;font-weight:500;}
+.toggle-row{margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.toggle-row label{font-size:12px;font-weight:500;flex:1;}
+#modeBar{
+  position:fixed;top:16px;left:16px;z-index:10;
+  display:flex;gap:6px;padding:6px;
+  border-radius:12px;
+  background:rgba(255,255,255,0.08);
+  backdrop-filter:blur(14px) saturate(140%);
+  -webkit-backdrop-filter:blur(14px) saturate(140%);
+  border:1px solid rgba(255,255,255,0.14);
+}
+.mode-btn{
+  padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.65);
+  font:600 12px/1.2 system-ui,sans-serif;cursor:pointer;
+  transition:background .2s,color .2s,border-color .2s;
+}
+.mode-btn:hover{color:#fff;}
+.mode-btn.active{
+  background:rgba(100,181,246,0.22);border-color:rgba(100,181,246,0.5);color:#fff;
+}
+#panel.hidden{display:none;}
+canvas.explore{cursor:default;}
+canvas.explore.orbiting{cursor:grabbing;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="modeBar">
+  <button type="button" class="mode-btn active" id="modeEdit" data-mode="edit">Edit Terrain</button>
+  <button type="button" class="mode-btn" id="modeExplore" data-mode="explore">Explore</button>
+</div>
+<div id="panel">
+  <div class="section open">
+    <div class="section-title">Land Generation</div>
+    <div class="section-content">
+      <div class="slider-row">
+        <label for="landSize">Land Size</label>
+        <input type="range" id="landSize" min="100" max="100000" value="1000" step="100">
+        <span class="val" id="landSizeVal">1000 x 1000</span>
+      </div>
+      <div class="slider-row">
+        <label for="noiseOctaves">Octaves</label>
+        <input type="range" id="noiseOctaves" min="1" max="8" value="4" step="1">
+        <span class="val" id="noiseOctavesVal">4</span>
+      </div>
+      <div class="slider-row">
+        <label for="noiseLacunarity">Lacunarity</label>
+        <input type="range" id="noiseLacunarity" min="10" max="40" value="20" step="1">
+        <span class="val" id="noiseLacunarityVal">2.0</span>
+      </div>
+      <div class="slider-row">
+        <label for="noisePersistence">Persistence</label>
+        <input type="range" id="noisePersistence" min="10" max="90" value="50" step="1">
+        <span class="val" id="noisePersistenceVal">0.50</span>
+      </div>
+      <div class="slider-row">
+        <label for="noiseSeed">Seed</label>
+        <input type="range" id="noiseSeed" min="0" max="9999" value="0" step="1">
+        <span class="val" id="noiseSeedVal">0</span>
+      </div>
+      <div class="slider-row">
+        <label for="hillHeight">Height</label>
+        <input type="range" id="hillHeight" min="0" max="200" value="100" step="1">
+        <span class="val" id="hillHeightVal">100%</span>
+      </div>
+      <div class="slider-row">
+      <label for="hillSpacing">Scale</label>
+      <input type="range" id="hillSpacing" min="5" max="500" value="100" step="1">
+      <span class="val" id="hillSpacingVal">100</span>
+      </div>
+      <div class="slider-row">
+        <label for="hillRolling">Rolling Hills</label>
+        <input type="range" id="hillRolling" min="0" max="200" value="100" step="1">
+        <span class="val" id="hillRollingVal">100%</span>
+      </div>
+      <div class="slider-row">
+        <label for="hillDunes">Large Dunes</label>
+        <input type="range" id="hillDunes" min="0" max="200" value="100" step="1">
+        <span class="val" id="hillDunesVal">100%</span>
+      </div>
+      <div class="slider-row">
+        <label for="hillDetail">Fine Detail</label>
+        <input type="range" id="hillDetail" min="0" max="200" value="100" step="1">
+        <span class="val" id="hillDetailVal">100%</span>
+      </div>
+      <div class="slider-row">
+        <label for="hillDisplacement">Micro Displacement</label>
+        <input type="range" id="hillDisplacement" min="0" max="50" value="5" step="1">
+        <span class="val" id="hillDisplacementVal">0.50</span>
+      </div>
+      <div class="slider-row">
+        <label for="freqX">X-Step</label>
+        <input type="range" id="freqX" min="10" max="500" value="100" step="5">
+        <span class="val" id="freqXVal">1.00</span>
+      </div>
+      <div class="slider-row">
+        <label for="freqZ">Z-Step</label>
+        <input type="range" id="freqZ" min="10" max="500" value="100" step="5">
+        <span class="val" id="freqZVal">1.00</span>
+      </div>
+      <div class="slider-row">
+        <label for="heightRedist">Height Redistribution</label>
+        <input type="range" id="heightRedist" min="30" max="300" value="100" step="5">
+        <span class="val" id="heightRedistVal">1.00</span>
+      </div>
+      <div class="slider-row">
+        <label for="seaLevel">Sea Level</label>
+        <input type="range" id="seaLevel" min="-50" max="150" value="0" step="1">
+        <span class="val" id="seaLevelVal">0</span>
+      </div>
+      <div class="slider-row">
+        <label for="warpStrength">Domain Warp</label>
+        <input type="range" id="warpStrength" min="0" max="100" value="0" step="1">
+        <span class="val" id="warpStrengthVal">0</span>
+      </div>
+      <div class="slider-row">
+        <label for="crustFactor">Crust Factor</label>
+        <input type="range" id="crustFactor" min="0" max="200" value="0" step="5">
+        <span class="val" id="crustFactorVal">0.0</span>
+      </div>
+      <div class="slider-row">
+        <label for="tectonicFactor">Tectonic Factor</label>
+        <input type="range" id="tectonicFactor" min="0" max="60" value="0" step="1">
+        <span class="val" id="tectonicFactorVal">0.0</span>
+      </div>
+      <div class="toggle-row">
+        <label for="islandMode">Island Mode</label>
+        <input type="checkbox" id="islandMode">
+      </div>
+      <div class="toggle-row">
+        <label for="mountainBorderMode">Mountain Border</label>
+        <input type="checkbox" id="mountainBorderMode">
+      </div>
+      <div class="slider-row">
+        <label for="mbRadius">MB Radius</label>
+        <input type="range" id="mbRadius" min="10" max="90" value="40" step="1">
+        <span class="val" id="mbRadiusVal">40</span>
+      </div>
+      <div class="slider-row">
+        <label for="mbWidth">MB Width</label>
+        <input type="range" id="mbWidth" min="5" max="40" value="15" step="1">
+        <span class="val" id="mbWidthVal">15</span>
+      </div>
+      <div class="slider-row">
+        <label for="mbHeight">MB Height</label>
+        <input type="range" id="mbHeight" min="0" max="300" value="100" step="1">
+        <span class="val" id="mbHeightVal">1.00</span>
+      </div>
+      <div class="slider-row">
+        <label for="mbIrregularity">MB Irregularity</label>
+        <input type="range" id="mbIrregularity" min="0" max="100" value="30" step="1">
+        <span class="val" id="mbIrregularityVal">0.30</span>
+      </div>
+      <div class="slider-row">
+        <label for="riverStrength">Rivers</label>
+        <input type="range" id="riverStrength" min="0" max="100" value="0" step="1">
+        <span class="val" id="riverStrengthVal">0</span>
+      </div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">Texture</div>
+    <div class="section-content">
+      <div id="texToggle"></div>
+      <label for="texScale">Texture Size</label>
+      <input type="range" id="texScale" min="50" max="800" value="200" step="10">
+      <span class="val" id="texScaleVal">200 units per tile</span>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">Sun</div>
+    <div class="section-content">
+    <div class="slider-row">
+      <label for="sunElevation">Elevation</label>
+      <input type="range" id="sunElevation" min="0" max="90" value="32" step="0.5">
+      <span class="val" id="sunElevationVal">32°</span>
+    </div>
+    <div class="slider-row">
+      <label for="sunAzimuth">Azimuth</label>
+      <input type="range" id="sunAzimuth" min="-180" max="180" value="180" step="1">
+      <span class="val" id="sunAzimuthVal">180°</span>
+    </div>
+    <div class="slider-row">
+      <label for="sunExposure">Exposure</label>
+      <input type="range" id="sunExposure" min="0" max="1" value="0.13" step="0.01">
+      <span class="val" id="sunExposureVal">0.13</span>
+    </div>
+    <div class="slider-row">
+      <label for="skyTurbidity">Turbidity</label>
+      <input type="range" id="skyTurbidity" min="0" max="20" value="10" step="0.1">
+      <span class="val" id="skyTurbidityVal">10.0</span>
+    </div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">Sky</div>
+    <div class="section-content">
+    <div class="slider-row">
+      <label for="skyRayleigh">Rayleigh</label>
+      <input type="range" id="skyRayleigh" min="0" max="4" value="1" step="0.1">
+      <span class="val" id="skyRayleighVal">1.0</span>
+    </div>
+    <div class="slider-row">
+      <label for="cloudCoverage">Cloud Coverage</label>
+      <input type="range" id="cloudCoverage" min="0" max="1" value="0.33" step="0.01">
+      <span class="val" id="cloudCoverageVal">0.33</span>
+    </div>
+    <div class="slider-row">
+      <label for="cloudDensity">Cloud Density</label>
+      <input type="range" id="cloudDensity" min="0" max="1" value="0.80" step="0.01">
+      <span class="val" id="cloudDensityVal">0.80</span>
+    </div>
+    <div class="slider-row">
+      <label for="cloudElevation">Cloud Elevation</label>
+      <input type="range" id="cloudElevation" min="0" max="1" value="0.5" step="0.01">
+      <span class="val" id="cloudElevationVal">0.50</span>
+    </div>
+    </div>
+  </div>
+</div>
+<div id="status">Loading…</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+
+const SEGMENTS = 512;
+const DEFAULT_TILE_SIZE = 200;
+let landSize = 1000;
+let noiseOctaves = 4;
+let noiseLacunarity = 2;
+let noisePersistence = 0.5;
+let heightRedistribution = 1;
+let warpStrength = 0;
+let crustFactor = 0;
+let tectonicFactor = 0;
+let islandMode = false;
+let mountainBorderMode = false;
+let mbRadius = 40;
+let mbWidth = 15;
+let mbHeight = 100;
+let mbIrregularity = 30;
+let riverStrength = 0;
+
+class PerlinNoise {
+  constructor(seed = 0) {
+    this.perm = new Array(512);
+    this.setSeed(seed);
+  }
+  setSeed(seed) {
+    const p = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+    let s = seed >>> 0;
+    for (let i = 255; i > 0; i--) {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      const j = s % (i + 1);
+      [p[i], p[j]] = [p[j], p[i]];
+    }
+    for (let i = 0; i < 256; i++) this.perm[i] = this.perm[i + 256] = p[i];
+  }
+  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  lerp(t, a, b) { return a + t * (b - a); }
+  grad(hash, x, y) {
+    const h = hash & 7;
+    if (h < 4) return ((h & 1) === 0 ? x : -x) + ((h & 2) === 0 ? y : -y);
+    return h === 4 ? x : h === 5 ? -x : h === 6 ? y : -y;
+  }
+  noise(x, y) {
+    const X = Math.floor(x) & 255;
+    const Y = Math.floor(y) & 255;
+    const xf = x - Math.floor(x);
+    const yf = y - Math.floor(y);
+    const u = this.fade(xf);
+    const v = this.fade(yf);
+    const aa = this.perm[this.perm[X] + Y];
+    const ab = this.perm[this.perm[X] + Y + 1];
+    const ba = this.perm[this.perm[X + 1] + Y];
+    const bb = this.perm[this.perm[X + 1] + Y + 1];
+    return this.lerp(v, this.lerp(u, this.grad(aa, xf, yf), this.grad(ba, xf - 1, yf)), this.lerp(u, this.grad(ab, xf, yf - 1), this.grad(bb, xf - 1, yf - 1)));
+  }
+  fbm(x, y, octaves = 4, lacunarity = 2, gain = 0.5) {
+    let value = 0, amplitude = 1, frequency = 1, maxValue = 0;
+    for (let i = 0; i < octaves; i++) {
+      value += amplitude * this.noise(x * frequency, y * frequency);
+      maxValue += amplitude;
+      amplitude *= gain;
+      frequency *= lacunarity;
+    }
+    return value / maxValue;
+  }
+}
+
+let noiseSeed = 0;
+let pn = new PerlinNoise(noiseSeed);
+
+const TEXTURE_SETS = {
+  stylized002: {
+    label: 'Stylized 002',
+    paths: {
+      map: './Stylized_Sand_002_basecolor.png',
+      normalMap: './Stylized_Sand_002_normal.png',
+      displacementMap: './Stylized_Sand_002_height.png',
+      roughnessMap: './Stylized_Sand_002_roughness.png',
+      aoMap: './Stylized_Sand_002_ambientOcclusion.png',
+    },
+  },
+  stylized001: {
+    label: 'Stylized 001',
+    paths: {
+      map: './Stylized_Sand_001_basecolor.jpg',
+      normalMap: './Stylized_Sand_001_normal.jpg',
+      displacementMap: './Stylized_Sand_001_height.png',
+      roughnessMap: './Stylized_Sand_001_roughness.jpg',
+      aoMap: './Stylized_Sand_001_ambientOcclusion.jpg',
+    },
+  },
+  sand008: {
+    label: 'Sand 008',
+    paths: {
+      map: './Sand_008_basecolor.png',
+      normalMap: './Sand_008_normal.png',
+      displacementMap: './Sand_008_height.png',
+      roughnessMap: './Sand_008_roughness.png',
+      aoMap: './Sand_008_ambientOcclusion.png',
+    },
+  },
+  ground033: {
+    label: 'Ground 033',
+    paths: {
+      map: './Ground033_1K-JPG_Color.jpg',
+      normalMap: './Ground033_1K-JPG_NormalGL.jpg',
+      displacementMap: './Ground033_1K-JPG_Displacement.jpg',
+      roughnessMap: './Ground033_1K-JPG_Roughness.jpg',
+      aoMap: './Ground033_1K-JPG_AmbientOcclusion.jpg',
+    },
+  },
+};
+
+const DEFAULT_TEXTURE_SET = 'stylized002';
+
+const sunParams = {
+  elevation: 32,
+  azimuth: 180,
+  exposure: 0.13,
+  turbidity: 10,
+  rayleigh: 1.0,
+  cloudCoverage: 0.33,
+  cloudDensity: 0.80,
+  cloudElevation: 0.5,
+};
+
+const hillParams = {
+  height: 1,
+  spacing: 100,
+  rolling: 1,
+  dunes: 1,
+  detail: 1,
+  displacement: 0.5,
+  freqX: 1,
+  freqZ: 1,
+};
+
+const canvas = document.getElementById('c');
+const statusEl = document.getElementById('status');
+const texScaleInput = document.getElementById('texScale');
+const texScaleVal = document.getElementById('texScaleVal');
+const texToggle = document.getElementById('texToggle');
+
+const scene = new THREE.Scene();
+
+function cameraFarForLandSize(size) {
+  return Math.max(50000, size * 3);
+}
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 1, cameraFarForLandSize(landSize));
+camera.position.set(400, 500, 1200);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.target.set(0, 80, 0);
+controls.minDistance = 50;
+controls.maxDistance = Math.max(8000, landSize * 1.5);
+controls.update();
+
+canvas.classList.add('grab');
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (appMode !== 'edit' || e.button !== 0) return;
+  canvas.classList.replace('grab', 'grabbing');
+  const up = () => { canvas.classList.replace('grabbing', 'grab'); window.removeEventListener('pointerup', up); };
+  window.addEventListener('pointerup', up);
+});
+
+// --- Explore / Edit mode -----------------------------------------------------
+const PLAYER_MODEL_URL = './cac-1783902065521.glb';
+const PLAYER_HEIGHT = 1.75; // average adult height in meters
+const MOVE_SPEED = 2.4;     // brisk walk (~m/s)
+const JUMP_SPEED = 6.5;     // ~0.65m jump apex
+const GRAVITY = 32;
+const ROLL_SPEED = 6;
+const CAMERA_DIST = 8;
+const CAMERA_MIN_DIST = 3;
+const CAMERA_MAX_DIST = 24;
+const CAMERA_MIN_PITCH = 0.15;
+const CAMERA_MAX_PITCH = 1.35;
+const FOOT_SOLE = 0.15;
+const FOOT_SPREAD = 0.15;
+const HIP_LIFT_MAX = 1.0;
+const HIP_LIFT_SMOOTH = 20;
+const SLOPE_LEAN = 0.25;
+
+let appMode = 'edit';
+let playerRoot = null;
+let playerModel = null;
+let playerMixer = null;
+let playerActions = {};
+let playerReady = false;
+let playerLoadPromise = null;
+let currentAnim = null;
+let animLockedUntil = 0;
+let leftFootBone = null;
+let rightFootBone = null;
+
+const player = {
+  position: new THREE.Vector3(0, 0, 0),
+  velocity: new THREE.Vector3(0, 0, 0),
+  yaw: 0,
+  grounded: false,
+  rolling: false,
+  jumping: false,
+  hipOffset: 0,
+  groundNormal: new THREE.Vector3(0, 1, 0),
+};
+
+const exploreCam = {
+  yaw: 0,
+  pitch: 0.45,
+  distance: CAMERA_DIST,
+  orbiting: false,
+  lastX: 0,
+  lastY: 0,
+};
+
+const keys = Object.create(null);
+const clock = new THREE.Clock();
+const tmpVec = new THREE.Vector3();
+const tmpVec2 = new THREE.Vector3();
+const tmpNormal = new THREE.Vector3();
+const leanQuat = new THREE.Quaternion();
+const yawQuat = new THREE.Quaternion();
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+const modeEditBtn = document.getElementById('modeEdit');
+const modeExploreBtn = document.getElementById('modeExplore');
+const panelEl = document.getElementById('panel');
+
+function setModeButtons(mode) {
+  modeEditBtn.classList.toggle('active', mode === 'edit');
+  modeExploreBtn.classList.toggle('active', mode === 'explore');
+}
+
+/** O(1) bilinear sample from terrain vertex heights (no raycasts). */
+function sampleTerrainY(x, z) {
+  if (!terrainMesh) return terrainHeight(x, z);
+  const pos = terrainMesh.geometry.attributes.position;
+  const segs = SEGMENTS;
+  const half = landSize * 0.5;
+  // PlaneGeometry rows: iy=0 → world z=+half after rotateX(-π/2); iy=segs → z=-half
+  const colF = THREE.MathUtils.clamp(((x + half) / landSize) * segs, 0, segs);
+  const rowF = THREE.MathUtils.clamp(((half - z) / landSize) * segs, 0, segs);
+  const c0 = Math.floor(colF);
+  const r0 = Math.floor(rowF);
+  const c1 = Math.min(c0 + 1, segs);
+  const r1 = Math.min(r0 + 1, segs);
+  const tx = colF - c0;
+  const tz = rowF - r0;
+  const stride = segs + 1;
+  const h00 = pos.getY(r0 * stride + c0);
+  const h10 = pos.getY(r0 * stride + c1);
+  const h01 = pos.getY(r1 * stride + c0);
+  const h11 = pos.getY(r1 * stride + c1);
+  return h00 * (1 - tx) * (1 - tz) + h10 * tx * (1 - tz) + h01 * (1 - tx) * tz + h11 * tx * tz;
+}
+
+function sampleTerrainNormal(x, z, out = tmpNormal) {
+  const e = Math.max(landSize / SEGMENTS, 0.5);
+  const hL = sampleTerrainY(x - e, z);
+  const hR = sampleTerrainY(x + e, z);
+  const hD = sampleTerrainY(x, z - e);
+  const hU = sampleTerrainY(x, z + e);
+  return out.set(hL - hR, 2 * e, hD - hU).normalize();
+}
+
+function sampleGroundSupport(x, z, yaw) {
+  const fx = Math.sin(yaw);
+  const fz = Math.cos(yaw);
+  const rx = -Math.cos(yaw);
+  const rz = Math.sin(yaw);
+  const r = FOOT_SPREAD;
+  const bodyR = 0.45;
+  const samples = [
+    sampleTerrainY(x, z),
+    // Foot spread
+    sampleTerrainY(x - rx * r, z - rz * r),
+    sampleTerrainY(x + rx * r, z + rz * r),
+    sampleTerrainY(x + fx * r * 0.8, z + fz * r * 0.8),
+    sampleTerrainY(x - fx * r * 0.5, z - fz * r * 0.5),
+    // Body-width spread to prevent torso clipping into slopes
+    sampleTerrainY(x - rx * bodyR, z - rz * bodyR),
+    sampleTerrainY(x + rx * bodyR, z + rz * bodyR),
+    sampleTerrainY(x + fx * bodyR, z + fz * bodyR),
+    sampleTerrainY(x - fx * bodyR, z - fz * bodyR),
+  ];
+  // Use max so the capsule never sinks into the highest nearby ground
+  const y = Math.max(...samples);
+  sampleTerrainNormal(x, z, tmpNormal);
+  return { y, normal: tmpNormal };
+}
+
+function soleClearance() {
+  const disp = terrainMaterial ? terrainMaterial.displacementScale * 0.8 : 0;
+  const mapDisp = terrainMaterial && terrainMaterial.displacementMap ? 0.1 : 0;
+  return FOOT_SOLE + disp + mapDisp;
+}
+
+function findBone(root, name) {
+  let found = null;
+  root.traverse((o) => {
+    if (!found && o.name === name) found = o;
+  });
+  return found;
+}
+
+function cachePlayerBones() {
+  leftFootBone = findBone(playerModel, 'mixamorigLeftToeBase') || findBone(playerModel, 'mixamorigLeftFoot');
+  rightFootBone = findBone(playerModel, 'mixamorigRightToeBase') || findBone(playerModel, 'mixamorigRightFoot');
+}
+
+/** Strip Mixamo root motion so loop resets don't yank / reverse the body. */
+function makeInPlaceClip(clip) {
+  const c = clip.clone();
+  c.tracks = clip.tracks.filter((track) => {
+    const name = track.name;
+    if (!/hips/i.test(name)) return true;
+    // Drop hips translation entirely (XZ root motion + Y bob); grounding owns Y
+    if (/\.position/.test(name)) return false;
+    return true;
+  });
+  return c;
+}
+
+/** Raise root so animated feet clear the heightfield (no bone mutation). */
+let _footBoneWarned = false;
+function applyFootClearance(dt) {
+  if (!player.grounded || player.rolling || !playerRoot) {
+    player.hipOffset = THREE.MathUtils.lerp(player.hipOffset, 0, 1 - Math.exp(-HIP_LIFT_SMOOTH * dt));
+    playerRoot.position.y = player.position.y + player.hipOffset;
+    return;
+  }
+
+  if (!_footBoneWarned && (!leftFootBone || !rightFootBone)) {
+    console.warn('Foot bones not found — IK clearance uses approximate positions');
+    _footBoneWarned = true;
+  }
+
+  playerRoot.position.y = player.position.y;
+  playerRoot.updateMatrixWorld(true);
+  let maxPen = 0;
+  const sole = soleClearance();
+
+  const checkFoot = (bone, fallbackX, fallbackZ) => {
+    let fx = fallbackX;
+    let fy = player.position.y;
+    let fz = fallbackZ;
+    if (bone) {
+      bone.getWorldPosition(tmpVec);
+      fx = tmpVec.x;
+      fy = tmpVec.y;
+      fz = tmpVec.z;
+    }
+    const ground = Math.max(sampleTerrainY(fx, fz), seaLevel - 0.4) + sole;
+    maxPen = Math.max(maxPen, ground - fy);
+  };
+
+  const rx = -Math.cos(player.yaw) * FOOT_SPREAD;
+  const rz = Math.sin(player.yaw) * FOOT_SPREAD;
+  // Baseline: always check approximate foot-spread positions
+  checkFoot(null, player.position.x - rx, player.position.z - rz);
+  checkFoot(null, player.position.x + rx, player.position.z + rz);
+  // Precision: check actual animated bone positions when available
+  if (leftFootBone) checkFoot(leftFootBone, player.position.x - rx, player.position.z - rz);
+  if (rightFootBone) checkFoot(rightFootBone, player.position.x + rx, player.position.z + rz);
+
+  const target = THREE.MathUtils.clamp(maxPen, 0, HIP_LIFT_MAX);
+  if (target > player.hipOffset) player.hipOffset = target;
+  else {
+    const alpha = 1 - Math.exp(-HIP_LIFT_SMOOTH * dt);
+    player.hipOffset = THREE.MathUtils.lerp(player.hipOffset, target, alpha);
+  }
+  playerRoot.position.y = player.position.y + player.hipOffset;
+}
+
+function findSpawnPosition() {
+  const candidates = [[0, 0], [50, 50], [-50, 40], [80, -60], [-100, 20]];
+  for (const [x, z] of candidates) {
+    const y = sampleTerrainY(x, z);
+    if (y >= seaLevel - 0.5) return new THREE.Vector3(x, y, z);
+  }
+  return new THREE.Vector3(0, sampleTerrainY(0, 0), 0);
+}
+
+function playAnim(name, fade = 0.25, loop = THREE.LoopRepeat) {
+  if (!playerActions[name] || currentAnim === name) return;
+  const next = playerActions[name];
+  const prev = currentAnim ? playerActions[currentAnim] : null;
+  next.enabled = true;
+  next.setLoop(loop, Infinity);
+  next.clampWhenFinished = loop === THREE.LoopOnce;
+  // Only hard-reset one-shots; crossfading locomotion from current time avoids hitch/reverse
+  if (loop === THREE.LoopOnce || !next.isRunning()) {
+    next.reset();
+  }
+  next.setEffectiveWeight(1);
+  if (prev && prev !== next) {
+    prev.fadeOut(fade);
+  }
+  next.fadeIn(fade).play();
+  currentAnim = name;
+}
+
+function playOneShot(name, lockMs) {
+  if (!playerActions[name]) return;
+  playAnim(name, 0.12, THREE.LoopOnce);
+  animLockedUntil = performance.now() + lockMs;
+  const action = playerActions[name];
+  const onFinished = (e) => {
+    if (e.action !== action) return;
+    playerMixer.removeEventListener('finished', onFinished);
+    player.rolling = false;
+    player.jumping = false;
+    animLockedUntil = 0;
+    updateLocomotionAnim(true);
+  };
+  playerMixer.addEventListener('finished', onFinished);
+}
+
+function updateLocomotionAnim(force = false) {
+  if (performance.now() < animLockedUntil && !force) return;
+  if (player.rolling || player.jumping) return;
+  const moving = keys['KeyW'] || keys['KeyA'] || keys['KeyS'] || keys['KeyD'];
+  playAnim(moving && player.grounded ? 'walk' : 'idle', 0.2);
+}
+
+async function ensurePlayerLoaded() {
+  if (playerReady) return true;
+  if (playerLoadPromise) return playerLoadPromise;
+  playerLoadPromise = (async () => {
+    statusEl.textContent = 'Loading character…';
+    statusEl.classList.remove('hidden', 'error');
+    const loader = new GLTFLoader();
+    const gltf = await loader.loadAsync(PLAYER_MODEL_URL);
+    playerModel = gltf.scene;
+    playerModel.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+        obj.frustumCulled = false;
+      }
+    });
+
+    const box = new THREE.Box3().setFromObject(playerModel);
+    const size = box.getSize(new THREE.Vector3());
+    const scale = PLAYER_HEIGHT / Math.max(size.y, 0.001);
+    playerModel.scale.setScalar(scale);
+    box.setFromObject(playerModel);
+    const center = box.getCenter(new THREE.Vector3());
+    const minY = box.min.y;
+    playerModel.position.set(-center.x, -minY, -center.z);
+
+    cachePlayerBones();
+
+    playerRoot = new THREE.Group();
+    playerRoot.add(playerModel);
+    playerRoot.visible = false;
+    scene.add(playerRoot);
+
+    playerMixer = new THREE.AnimationMixer(playerModel);
+    const clips = gltf.animations || [];
+    const findClip = (...names) => {
+      for (const n of names) {
+        const exact = clips.find((c) => c.name === n);
+        if (exact) return exact;
+      }
+      return clips.find((c) => names.some((n) => c.name.toLowerCase() === n.toLowerCase()))
+        || clips.find((c) => names.some((n) => c.name.toLowerCase().includes(n.toLowerCase())));
+    };
+    const idleClip = findClip('InjuredIdle') || clips.find((c) => /idle/i.test(c.name) && !/t-pose/i.test(c.name));
+    const walkClip = findClip('CrouchedWalking');
+    const jumpClip = findClip('Jump');
+    const rollClip = findClip('SprintingForwardRoll');
+    if (idleClip) playerActions.idle = playerMixer.clipAction(makeInPlaceClip(idleClip));
+    if (walkClip) playerActions.walk = playerMixer.clipAction(makeInPlaceClip(walkClip));
+    if (jumpClip) playerActions.jump = playerMixer.clipAction(makeInPlaceClip(jumpClip));
+    if (rollClip) playerActions.roll = playerMixer.clipAction(makeInPlaceClip(rollClip));
+    for (const a of Object.values(playerActions)) {
+      a.enabled = true;
+      a.setEffectiveWeight(1);
+      a.setEffectiveTimeScale(1);
+    }
+    playerReady = true;
+    statusEl.classList.add('hidden');
+    return true;
+  })().catch((err) => {
+    playerLoadPromise = null;
+    statusEl.textContent = 'Failed to load character';
+    statusEl.classList.add('error');
+    console.error(err);
+    return false;
+  });
+  return playerLoadPromise;
+}
+
+function spawnPlayer() {
+  const spawn = findSpawnPosition();
+  player.position.copy(spawn);
+  player.velocity.set(0, 0, 0);
+  player.yaw = exploreCam.yaw;
+  player.grounded = true;
+  player.rolling = false;
+  player.jumping = false;
+  player.hipOffset = 0;
+  player.groundNormal.set(0, 1, 0);
+  animLockedUntil = 0;
+  currentAnim = null;
+  if (playerRoot) {
+    playerRoot.position.copy(player.position);
+    playerRoot.quaternion.identity();
+    playerRoot.rotation.set(0, player.yaw, 0);
+    playerRoot.visible = true;
+  }
+  playAnim('idle', 0);
+  syncExploreCamera(true);
+}
+
+function despawnPlayer() {
+  if (playerRoot) playerRoot.visible = false;
+  player.rolling = false;
+  player.jumping = false;
+  player.hipOffset = 0;
+  animLockedUntil = 0;
+  Object.keys(keys).forEach((k) => { keys[k] = false; });
+}
+
+function storeEditCamera() {
+  return {
+    position: camera.position.clone(),
+    target: controls.target.clone(),
+  };
+}
+
+let savedEditCamera = null;
+
+function restoreEditCamera() {
+  if (savedEditCamera) {
+    camera.position.copy(savedEditCamera.position);
+    controls.target.copy(savedEditCamera.target);
+  } else {
+    camera.position.set(400, 500, 1200);
+    controls.target.set(0, 80, 0);
+  }
+  controls.update();
+}
+
+function syncExploreCamera(instant = false) {
+  const offset = tmpVec.set(
+    Math.sin(exploreCam.yaw) * Math.cos(exploreCam.pitch) * exploreCam.distance,
+    Math.sin(exploreCam.pitch) * exploreCam.distance,
+    Math.cos(exploreCam.yaw) * Math.cos(exploreCam.pitch) * exploreCam.distance,
+  );
+  const lookAt = tmpVec2.set(
+    player.position.x,
+    player.position.y + player.hipOffset + PLAYER_HEIGHT * 0.7,
+    player.position.z,
+  );
+  const desired = lookAt.clone().add(offset);
+  if (instant) camera.position.copy(desired);
+  else camera.position.lerp(desired, 0.18);
+  const camY = sampleTerrainY(camera.position.x, camera.position.z);
+  const minCamY = camY + 0.5;
+  if (camera.position.y < minCamY) camera.position.y = minCamY;
+  camera.lookAt(lookAt);
+}
+
+async function enterExploreMode() {
+  const ok = await ensurePlayerLoaded();
+  if (!ok) return;
+  if (appMode === 'explore') {
+    spawnPlayer();
+    return;
+  }
+  savedEditCamera = storeEditCamera();
+  appMode = 'explore';
+  setModeButtons('explore');
+  controls.enabled = false;
+  camera.near = 0.1;
+  camera.updateProjectionMatrix();
+  canvas.classList.remove('grab', 'grabbing');
+  canvas.classList.add('explore');
+  panelEl.classList.add('hidden');
+  spawnPlayer();
+}
+
+function enterEditMode({ fromTerrainEdit = false } = {}) {
+  if (appMode === 'edit' && !fromTerrainEdit) return;
+  const wasExplore = appMode === 'explore';
+  appMode = 'edit';
+  setModeButtons('edit');
+  despawnPlayer();
+  controls.enabled = true;
+  camera.near = 1;
+  camera.updateProjectionMatrix();
+  canvas.classList.remove('explore', 'orbiting');
+  canvas.classList.add('grab');
+  panelEl.classList.remove('hidden');
+  if (wasExplore || fromTerrainEdit) restoreEditCamera();
+}
+
+function invalidateExploreOnTerrainEdit() {
+  if (appMode === 'explore') {
+    enterEditMode({ fromTerrainEdit: true });
+  } else if (playerRoot?.visible) {
+    despawnPlayer();
+  }
+}
+
+modeEditBtn.addEventListener('click', () => enterEditMode());
+modeExploreBtn.addEventListener('click', () => { enterExploreMode(); });
+
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof Element && e.target.closest('input, textarea, select')) return;
+  keys[e.code] = true;
+  if (appMode !== 'explore') return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (player.grounded && !player.rolling && !player.jumping) {
+      player.velocity.x = 0;
+      player.velocity.z = 0;
+      player.velocity.y = JUMP_SPEED;
+      player.grounded = false;
+      player.jumping = true;
+      playOneShot('jump', 2600);
+    }
+  }
+  if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && !player.rolling && player.grounded) {
+    e.preventDefault();
+    player.rolling = true;
+    const fx = Math.sin(player.yaw);
+    const fz = Math.cos(player.yaw);
+    player.velocity.x = fx * ROLL_SPEED;
+    player.velocity.z = fz * ROLL_SPEED;
+    playOneShot('roll', 1200);
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+});
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (appMode !== 'explore' || e.button !== 0) return;
+  exploreCam.orbiting = true;
+  exploreCam.lastX = e.clientX;
+  exploreCam.lastY = e.clientY;
+  canvas.classList.add('orbiting');
+  renderer.domElement.setPointerCapture?.(e.pointerId);
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (appMode !== 'explore' || !exploreCam.orbiting) return;
+  const dx = e.clientX - exploreCam.lastX;
+  const dy = e.clientY - exploreCam.lastY;
+  exploreCam.lastX = e.clientX;
+  exploreCam.lastY = e.clientY;
+  exploreCam.yaw -= dx * 0.005;
+  exploreCam.pitch += dy * 0.004;
+  exploreCam.pitch = THREE.MathUtils.clamp(exploreCam.pitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH);
+});
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!exploreCam.orbiting) return;
+  exploreCam.orbiting = false;
+  canvas.classList.remove('orbiting');
+  renderer.domElement.releasePointerCapture?.(e.pointerId);
+});
+
+renderer.domElement.addEventListener('pointercancel', () => {
+  exploreCam.orbiting = false;
+  canvas.classList.remove('orbiting');
+});
+
+renderer.domElement.addEventListener('wheel', (e) => {
+  if (appMode !== 'explore') return;
+  e.preventDefault();
+  exploreCam.distance = THREE.MathUtils.clamp(
+    exploreCam.distance + e.deltaY * 0.01,
+    CAMERA_MIN_DIST,
+    CAMERA_MAX_DIST,
+  );
+}, { passive: false });
+
+function updatePlayer(dt) {
+  if (!playerRoot?.visible) return;
+
+  const forward = tmpVec.set(-Math.sin(exploreCam.yaw), 0, -Math.cos(exploreCam.yaw));
+  const right = tmpVec2.set(Math.sin(exploreCam.yaw + Math.PI / 2), 0, Math.cos(exploreCam.yaw + Math.PI / 2));
+
+  let mx = 0, mz = 0;
+  const canSteer = !player.rolling && !player.jumping && player.grounded;
+  if (canSteer) {
+    if (keys['KeyW']) { mx += forward.x; mz += forward.z; }
+    if (keys['KeyS']) { mx -= forward.x; mz -= forward.z; }
+    if (keys['KeyA']) { mx -= right.x; mz -= right.z; }
+    if (keys['KeyD']) { mx += right.x; mz += right.z; }
+  }
+
+  if (player.jumping) {
+    player.velocity.x = 0;
+    player.velocity.z = 0;
+  } else if (mx !== 0 || mz !== 0) {
+    const len = Math.hypot(mx, mz) || 1;
+    mx /= len; mz /= len;
+    player.velocity.x = mx * MOVE_SPEED;
+    player.velocity.z = mz * MOVE_SPEED;
+    player.yaw = Math.atan2(mx, mz);
+  } else if (!player.rolling) {
+    player.velocity.x *= Math.pow(0.02, dt);
+    player.velocity.z *= Math.pow(0.02, dt);
+    if (Math.hypot(player.velocity.x, player.velocity.z) < 0.05) {
+      player.velocity.x = 0;
+      player.velocity.z = 0;
+    }
+  }
+  if (!player.grounded || player.jumping) player.velocity.y -= GRAVITY * dt;
+  player.position.x += player.velocity.x * dt;
+  player.position.z += player.velocity.z * dt;
+  player.position.y += player.velocity.y * dt;
+  const half = landSize * 0.48;
+  player.position.x = THREE.MathUtils.clamp(player.position.x, -half, half);
+  player.position.z = THREE.MathUtils.clamp(player.position.z, -half, half);
+  const support = sampleGroundSupport(player.position.x, player.position.z, player.yaw);
+  const floorY = Math.max(support.y, seaLevel - 0.4);
+  player.groundNormal.lerp(support.normal, 1 - Math.exp(-10 * dt)).normalize();
+  if (player.jumping || !player.grounded) {
+    if (player.position.y <= floorY && player.velocity.y <= 0) {
+      player.position.y = floorY;
+      player.velocity.y = 0;
+      player.grounded = true;
+      if (player.jumping && performance.now() >= animLockedUntil) player.jumping = false;
+    } else {
+      player.grounded = false;
+    }
+  } else {
+    const drop = player.position.y - floorY;
+    if (drop > 1.25) {
+      player.grounded = false;
+    } else if (drop > 0.005) {
+      player.position.y = THREE.MathUtils.lerp(player.position.y, floorY, 1 - Math.exp(-15 * dt));
+      player.velocity.y = 0;
+    } else {
+      const stepUp = floorY - player.position.y;
+      if (stepUp > 0) player.position.y = floorY;
+      player.velocity.y = 0;
+    }
+  }
+  if (player.rolling) {
+    player.velocity.x *= Math.pow(0.15, dt);
+    player.velocity.z *= Math.pow(0.15, dt);
+  }
+
+  playerRoot.position.set(player.position.x, player.position.y, player.position.z);
+
+  // Yaw + mild lean into slope (no leg bone writes)
+  yawQuat.setFromAxisAngle(WORLD_UP, player.yaw);
+  if (player.grounded && !player.jumping && !player.rolling) {
+    tmpNormal.copy(player.groundNormal);
+    tmpNormal.x *= SLOPE_LEAN;
+    tmpNormal.z *= SLOPE_LEAN;
+    tmpNormal.y = Math.max(tmpNormal.y, 0.75);
+    tmpNormal.normalize();
+    if (tmpNormal.lengthSq() < 0.001) tmpNormal.copy(WORLD_UP);
+    leanQuat.setFromUnitVectors(WORLD_UP, tmpNormal);
+    playerRoot.quaternion.copy(leanQuat).multiply(yawQuat);
+  } else {
+    playerRoot.quaternion.copy(yawQuat);
+  }
+
+  updateLocomotionAnim();
+  if (playerMixer) playerMixer.update(dt);
+  applyFootClearance(dt);
+
+  // Hard floor: prevent root from ever dropping below terrain at foot positions
+  const _sole = soleClearance();
+  const _rx = Math.cos(player.yaw) * FOOT_SPREAD;
+  const _rz = -Math.sin(player.yaw) * FOOT_SPREAD;
+  const _floor = Math.max(
+    sampleTerrainY(player.position.x - _rx, player.position.z - _rz),
+    sampleTerrainY(player.position.x + _rx, player.position.z + _rz),
+    sampleTerrainY(player.position.x, player.position.z),
+    seaLevel - 0.4,
+  ) + _sole;
+  playerRoot.position.y = Math.max(playerRoot.position.y, _floor);
+
+  syncExploreCamera();
+}
+
+const sun = new THREE.Vector3();
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 10;
+dirLight.shadow.camera.far = 12000;
+function updateShadowCamera() {
+  const extent = landSize * 0.55;
+  dirLight.shadow.camera.left = -extent;
+  dirLight.shadow.camera.right = extent;
+  dirLight.shadow.camera.top = extent;
+  dirLight.shadow.camera.bottom = -extent;
+  dirLight.shadow.camera.far = Math.max(12000, landSize * 1.5);
+  dirLight.shadow.camera.updateProjectionMatrix();
+}
+dirLight.shadow.bias = -0.0005;
+updateShadowCamera();
+scene.add(dirLight);
+
+const sceneEnv = new THREE.Scene();
+
+const sky = new Sky();
+sky.scale.setScalar(10000);
+sceneEnv.add(sky);
+
+const skyVisual = new Sky();
+skyVisual.scale.setScalar(10000);
+scene.add(skyVisual);
+
+const skyUniforms = sky.material.uniforms;
+
+function applySkyUniforms() {
+  const visUniforms = skyVisual.material.uniforms;
+  skyUniforms.turbidity.value = sunParams.turbidity;
+  skyUniforms.rayleigh.value = sunParams.rayleigh;
+  skyUniforms.cloudCoverage.value = sunParams.cloudCoverage;
+  skyUniforms.cloudDensity.value = sunParams.cloudDensity;
+  skyUniforms.cloudElevation.value = sunParams.cloudElevation;
+  visUniforms.turbidity.value = sunParams.turbidity;
+  visUniforms.rayleigh.value = sunParams.rayleigh;
+  visUniforms.cloudCoverage.value = sunParams.cloudCoverage;
+  visUniforms.cloudDensity.value = sunParams.cloudDensity;
+  visUniforms.cloudElevation.value = sunParams.cloudElevation;
+  renderer.toneMappingExposure = sunParams.exposure;
+}
+
+applySkyUniforms();
+skyUniforms.mieCoefficient.value = 0.005;
+skyUniforms.mieDirectionalG.value = 0.8;
+skyVisual.material.uniforms.mieCoefficient.value = 0.005;
+skyVisual.material.uniforms.mieDirectionalG.value = 0.8;
+
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+let renderTarget;
+
+function updateSun() {
+  const phi = THREE.MathUtils.degToRad(90 - sunParams.elevation);
+  const theta = THREE.MathUtils.degToRad(sunParams.azimuth);
+  sun.setFromSphericalCoords(1, phi, theta);
+
+  sky.material.uniforms.sunPosition.value.copy(sun);
+  skyVisual.material.uniforms.sunPosition.value.copy(sun);
+  dirLight.position.copy(sun).multiplyScalar(4000);
+  applySkyUniforms();
+
+  if (renderTarget !== undefined) renderTarget.dispose();
+
+  sky.material.uniforms.showSunDisc.value = false;
+  renderTarget = pmremGenerator.fromScene(sceneEnv);
+  scene.environment = renderTarget.texture;
+}
+
+function updateSkyVisuals() {
+  applySkyUniforms();
+}
+
+updateSun();
+
+function terrainHeight(x, z) {
+  if (islandMode) {
+    const half = landSize / 2;
+    const dx = x / half, dz = z / half;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const coastShape = pn.fbm(x * 0.006, z * 0.006, 3, 2.5, 0.5) * 0.25;
+    const coastDist = 1 - dist + coastShape;
+    if (coastDist < 0) return -20;
+    let h = coastDist * 100;
+    h += pn.noise(x * 0.03, z * 0.03) * 10 * hillParams.detail;
+    h += pn.noise(x * 0.006, z * 0.006) * 20 * hillParams.dunes;
+    return h * hillParams.height * hillParams.rolling;
+  }
+  if (mountainBorderMode) {
+    const half = landSize / 2;
+    const dist = Math.sqrt(x * x + z * z) / half;
+    const mbRadiusNorm = mbRadius / 100;
+    const mbWidthNorm = mbWidth / 100;
+    const irreg = mbIrregularity * 0.01;
+    const noiseOff = irreg > 0 ? pn.fbm(x * 0.005, z * 0.005, 3, 2.5, 0.5) * irreg : 0;
+    const ringDist = (dist + noiseOff - mbRadiusNorm) / mbWidthNorm;
+    const ringWeight = Math.exp(-ringDist * ringDist);
+    const mtnNoise = pn.fbm(x * 0.012, z * 0.012, 4, 2.2, 0.5);
+    const detail = hillParams.detail !== 0 ? pn.noise(x * 0.03, z * 0.03) * 10 * hillParams.detail : 0;
+    const dune = hillParams.dunes !== 0 ? pn.noise(x * 0.006, z * 0.006) * 20 * hillParams.dunes : 0;
+    let h = ringWeight * (0.5 + mtnNoise * 0.5) * (mbHeight / 100) * 100 + detail + dune;
+    return h * hillParams.height * hillParams.rolling;
+  }
+  const baseScale = hillParams.spacing * 3 * (landSize / 1000);
+  const sx = baseScale / Math.max(0.01, hillParams.freqX);
+  const sz = baseScale / Math.max(0.01, hillParams.freqZ);
+  let nx = x / sx, nz = z / sz;
+  if (warpStrength > 0) {
+    const w = warpStrength / baseScale;
+    nx += pn.fbm(x * 0.005 + 100, z * 0.005, 2, 2, 0.5) * w;
+    nz += pn.fbm(x * 0.005 + 200, z * 0.005 + 100, 2, 2, 0.5) * w;
+  }
+  const n = pn.fbm(nx, nz, noiseOctaves, noiseLacunarity, noisePersistence);
+  const detailNoise = hillParams.detail !== 0 ? pn.noise(x * 0.02, z * 0.02) * 0.2 * hillParams.detail : 0;
+  const duneNoise = hillParams.dunes !== 0 ? pn.noise(x * 0.004, z * 0.004) * 0.4 * hillParams.dunes : 0;
+  const base = (n + detailNoise + duneNoise) * hillParams.height * 120 * hillParams.rolling;
+  let tectonicMod = 0;
+  if (crustFactor !== 0 || tectonicFactor !== 0) {
+    const crustScale = hillParams.spacing * 6;
+    const crust = pn.fbm(x / crustScale, z / crustScale, 3, 2.5, 0.5);
+    const tectonic = 0.2 / (Math.abs(crust) + 0.1) - 0.95;
+    tectonicMod = (crust * crustFactor + tectonic * tectonicFactor) * 20;
+  }
+  return base + tectonicMod;
+}
+
+function seededRandom(seed) {
+  let s = (seed >>> 0) || 1;
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
+
+function carveRivers(heights, count) {
+  if (riverStrength === 0) return;
+  const gridSize = SEGMENTS + 1;
+  const flow = new Float32Array(count);
+  const downhill = new Int32Array(count);
+  for (let i = 0; i < count; i++) {
+    const row = Math.floor(i / gridSize);
+    const col = i % gridSize;
+    let bestH = heights[i];
+    let bestIdx = -1;
+    if (row > 0) { const j = i - gridSize; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
+    if (row < SEGMENTS) { const j = i + gridSize; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
+    if (col > 0) { const j = i - 1; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
+    if (col < SEGMENTS) { const j = i + 1; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
+    downhill[i] = bestIdx;
+  }
+  let minH = Infinity, maxH = -Infinity;
+  for (let i = 0; i < count; i++) {
+    if (heights[i] < minH) minH = heights[i];
+    if (heights[i] > maxH) maxH = heights[i];
+  }
+  const threshold = minH + (maxH - minH) * 0.65;
+  const candidates = [];
+  for (let i = 0; i < count; i++) {
+    if (heights[i] > threshold) candidates.push(i);
+  }
+  if (candidates.length < 5) return;
+  const numRivers = Math.max(1, Math.floor(riverStrength * 0.4 + 1));
+  const depthScale = riverStrength / 100;
+  const rand = seededRandom(noiseSeed + 7919);
+  for (let r = 0; r < Math.min(numRivers, candidates.length); r++) {
+    let idx = candidates[Math.floor(rand() * candidates.length)];
+    let steps = 0;
+    while (idx >= 0 && steps < 5000) {
+      flow[idx] += 1;
+      idx = downhill[idx];
+      steps++;
+    }
+  }
+  for (let i = 0; i < count; i++) {
+    if (flow[i] > 0) {
+      const depth = Math.min(30, 0.5 + flow[i] * 0.6) * depthScale;
+      heights[i] -= depth;
+    }
+  }
+}
+
+let terrainMesh;
+let waterMesh;
+let seaLevel = 0;
+let terrainUpdatePending = false;
+
+let sandTextures = [];
+let currentTileSize = DEFAULT_TILE_SIZE;
+let terrainMaterial;
+let activeSetKey = DEFAULT_TEXTURE_SET;
+const loadedSets = {};
+
+function setTextureSize(unitsPerTile) {
+  currentTileSize = unitsPerTile;
+  const repeat = landSize / unitsPerTile;
+  for (const tex of sandTextures) {
+    tex.repeat.set(repeat, repeat);
+  }
+  texScaleVal.textContent = `${unitsPerTile} units per tile`;
+}
+
+function waitOrTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout')), ms))
+  ]);
+}
+
+async function loadTextureSet(key) {
+  const { paths } = TEXTURE_SETS[key];
+  const textureLoader = new THREE.TextureLoader();
+  const [map, normalMap, displacementMap, roughnessMap, aoMap] = await Promise.all([
+    waitOrTimeout(textureLoader.loadAsync(paths.map), 30000),
+    waitOrTimeout(textureLoader.loadAsync(paths.normalMap), 30000),
+    waitOrTimeout(textureLoader.loadAsync(paths.displacementMap), 30000),
+    waitOrTimeout(textureLoader.loadAsync(paths.roughnessMap), 30000),
+    waitOrTimeout(textureLoader.loadAsync(paths.aoMap), 30000),
+  ]);
+
+  const textures = [map, normalMap, displacementMap, roughnessMap, aoMap];
+  for (const tex of textures) {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  }
+  map.colorSpace = THREE.SRGBColorSpace;
+
+  loadedSets[key] = { map, normalMap, displacementMap, roughnessMap, aoMap, textures };
+}
+
+function applyTextureSet(key) {
+  const set = loadedSets[key];
+  if (!set || !terrainMaterial) return;
+
+  activeSetKey = key;
+  terrainMaterial.map = set.map;
+  terrainMaterial.normalMap = set.normalMap;
+  terrainMaterial.displacementMap = set.displacementMap;
+  terrainMaterial.roughnessMap = set.roughnessMap;
+  terrainMaterial.aoMap = set.aoMap;
+  terrainMaterial.needsUpdate = true;
+
+  sandTextures = set.textures;
+  setTextureSize(currentTileSize);
+
+  for (const btn of texToggle.querySelectorAll('.tex-btn')) {
+    btn.classList.toggle('active', btn.dataset.set === key);
+  }
+}
+
+function updateTerrainHeights() {
+  if (!terrainMesh) return;
+  const pos = terrainMesh.geometry.attributes.position;
+
+  let minH = Infinity, maxH = -Infinity;
+  const heights = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const h = terrainHeight(pos.getX(i), pos.getZ(i));
+    heights[i] = h;
+    if (h < minH) minH = h;
+    if (h > maxH) maxH = h;
+  }
+
+  const range = maxH - minH || 1;
+  if (heightRedistribution !== 1) {
+    for (let i = 0; i < pos.count; i++) {
+      const t = (heights[i] - minH) / range;
+      heights[i] = minH + Math.pow(t, heightRedistribution) * range;
+    }
+  }
+
+  carveRivers(heights, pos.count);
+
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, heights[i]);
+  }
+  pos.needsUpdate = true;
+
+  terrainMesh.geometry.computeVertexNormals();
+}
+
+function scheduleTerrainUpdate() {
+  if (terrainUpdatePending) return;
+  terrainUpdatePending = true;
+  requestAnimationFrame(() => {
+    updateTerrainHeights();
+    terrainUpdatePending = false;
+    invalidateExploreOnTerrainEdit();
+  });
+}
+
+function resizeTerrain() {
+  invalidateExploreOnTerrainEdit();
+  if (terrainMesh) {
+    scene.remove(terrainMesh);
+    terrainMesh.geometry.dispose();
+    terrainMesh.material.dispose();
+  }
+  controls.maxDistance = Math.max(8000, landSize * 1.5);
+  camera.far = cameraFarForLandSize(landSize);
+  camera.updateProjectionMatrix();
+  buildTerrain();
+  createWater();
+  applyTextureSet(activeSetKey);
+  updateShadowCamera();
+}
+
+function buildTerrain() {
+  const geometry = new THREE.PlaneGeometry(landSize, landSize, SEGMENTS, SEGMENTS);
+  const pos = geometry.attributes.position;
+
+  const heights = new Float32Array(pos.count);
+  let minH = Infinity, maxH = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const wx = pos.getX(i);
+    const wz = -pos.getY(i);
+    const h = terrainHeight(wx, wz);
+    heights[i] = h;
+    if (h < minH) minH = h;
+    if (h > maxH) maxH = h;
+  }
+
+  const range = maxH - minH || 1;
+  if (heightRedistribution !== 1) {
+    for (let i = 0; i < pos.count; i++) {
+      const t = (heights[i] - minH) / range;
+      heights[i] = minH + Math.pow(t, heightRedistribution) * range;
+    }
+  }
+
+  carveRivers(heights, pos.count);
+
+  for (let i = 0; i < pos.count; i++) {
+    pos.setZ(i, heights[i]);
+  }
+
+  geometry.rotateX(-Math.PI / 2);
+  geometry.computeVertexNormals();
+
+  geometry.setAttribute('uv2', geometry.attributes.uv.clone());
+
+  terrainMaterial = new THREE.MeshStandardMaterial({
+    roughness: 1,
+    metalness: 0,
+    displacementScale: hillParams.displacement,
+  });
+
+  terrainMesh = new THREE.Mesh(geometry, terrainMaterial);
+  terrainMesh.receiveShadow = true;
+  scene.add(terrainMesh);
+}
+
+function createWater() {
+  if (waterMesh) {
+    scene.remove(waterMesh);
+    waterMesh.geometry.dispose();
+    waterMesh.material.dispose();
+  }
+  const geo = new THREE.PlaneGeometry(landSize, landSize);
+  geo.rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: 0x1a6e9e,
+    transparent: true,
+    opacity: 0.55,
+    roughness: 0.2,
+    metalness: 0.05,
+    side: THREE.DoubleSide,
+  });
+  waterMesh = new THREE.Mesh(geo, mat);
+  waterMesh.position.y = seaLevel;
+  waterMesh.renderOrder = 1;
+  scene.add(waterMesh);
+}
+
+function updateWater() {
+  if (!waterMesh) { createWater(); return; }
+  waterMesh.position.y = seaLevel;
+}
+
+function bindSunSliders() {
+  const bindings = [
+    { id: 'sunElevation', key: 'elevation', valId: 'sunElevationVal', fmt: (v) => `${v}°`, rebake: true },
+    { id: 'sunAzimuth', key: 'azimuth', valId: 'sunAzimuthVal', fmt: (v) => `${v}°`, rebake: true },
+    { id: 'sunExposure', key: 'exposure', valId: 'sunExposureVal', fmt: (v) => v.toFixed(2), rebake: false },
+    { id: 'skyTurbidity', key: 'turbidity', valId: 'skyTurbidityVal', fmt: (v) => v.toFixed(1), rebake: false },
+    { id: 'skyRayleigh', key: 'rayleigh', valId: 'skyRayleighVal', fmt: (v) => v.toFixed(1), rebake: false },
+    { id: 'cloudCoverage', key: 'cloudCoverage', valId: 'cloudCoverageVal', fmt: (v) => v.toFixed(2), rebake: false },
+    { id: 'cloudDensity', key: 'cloudDensity', valId: 'cloudDensityVal', fmt: (v) => v.toFixed(2), rebake: false },
+    { id: 'cloudElevation', key: 'cloudElevation', valId: 'cloudElevationVal', fmt: (v) => v.toFixed(2), rebake: false },
+  ];
+
+  for (const { id, key, valId, fmt, rebake } of bindings) {
+    const input = document.getElementById(id);
+    const valEl = document.getElementById(valId);
+    input.addEventListener('input', () => {
+      sunParams[key] = Number(input.value);
+      valEl.textContent = fmt(sunParams[key]);
+      if (rebake) updateSun();
+      else updateSkyVisuals();
+    });
+  }
+}
+
+function bindHillSliders() {
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  const bindings = [
+    {
+      id: 'hillHeight', key: 'height', valId: 'hillHeightVal',
+      parse: (v) => v / 100, fmt: (v) => pct(v),
+      onChange: scheduleTerrainUpdate,
+    },
+    {
+      id: 'hillSpacing', key: 'spacing', valId: 'hillSpacingVal',
+      parse: (v) => v, fmt: (v) => v,
+      onChange: scheduleTerrainUpdate,
+    },
+    {
+      id: 'hillRolling', key: 'rolling', valId: 'hillRollingVal',
+      parse: (v) => v / 100, fmt: (v) => pct(v),
+      onChange: scheduleTerrainUpdate,
+    },
+    {
+      id: 'hillDunes', key: 'dunes', valId: 'hillDunesVal',
+      parse: (v) => v / 100, fmt: (v) => pct(v),
+      onChange: scheduleTerrainUpdate,
+    },
+    {
+      id: 'hillDetail', key: 'detail', valId: 'hillDetailVal',
+      parse: (v) => v / 100, fmt: (v) => pct(v),
+      onChange: scheduleTerrainUpdate,
+    },
+    {
+      id: 'hillDisplacement', key: 'displacement', valId: 'hillDisplacementVal',
+      parse: (v) => v / 10, fmt: (v) => v.toFixed(2),
+      onChange: () => {
+        if (terrainMaterial) terrainMaterial.displacementScale = hillParams.displacement;
+      },
+    },
+    {
+      id: 'freqX', key: 'freqX', valId: 'freqXVal',
+      parse: (v) => v / 100, fmt: (v) => v.toFixed(2),
+      onChange: scheduleTerrainUpdate,
+    },
+    {
+      id: 'freqZ', key: 'freqZ', valId: 'freqZVal',
+      parse: (v) => v / 100, fmt: (v) => v.toFixed(2),
+      onChange: scheduleTerrainUpdate,
+    },
+  ];
+
+  for (const { id, key, valId, parse, fmt, onChange } of bindings) {
+    const input = document.getElementById(id);
+    const valEl = document.getElementById(valId);
+    input.addEventListener('input', () => {
+      hillParams[key] = parse(Number(input.value));
+      valEl.textContent = fmt(hillParams[key]);
+      onChange();
+    });
+  }
+}
+
+function buildTextureButtons() {
+  texToggle.innerHTML = '';
+  for (const [key, { label }] of Object.entries(TEXTURE_SETS)) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tex-btn';
+    btn.dataset.set = key;
+    btn.textContent = label;
+    texToggle.appendChild(btn);
+  }
+}
+
+function initAccordion() {
+  const sections = document.querySelectorAll('#panel .section');
+  const titles = document.querySelectorAll('#panel .section-title');
+  titles.forEach((title) => {
+    title.addEventListener('click', () => {
+      const section = title.parentElement;
+      const wasOpen = section.classList.contains('open');
+      sections.forEach(s => s.classList.remove('open'));
+      if (!wasOpen) section.classList.add('open');
+    });
+  });
+}
+
+function bindRedistSlider() {
+  const input = document.getElementById('heightRedist');
+  const valEl = document.getElementById('heightRedistVal');
+  input.addEventListener('input', () => {
+    heightRedistribution = Number(input.value) / 100;
+    valEl.textContent = heightRedistribution.toFixed(2);
+    scheduleTerrainUpdate();
+  });
+}
+
+function bindSeaLevelSlider() {
+  const input = document.getElementById('seaLevel');
+  const valEl = document.getElementById('seaLevelVal');
+  input.addEventListener('input', () => {
+    seaLevel = Number(input.value);
+    valEl.textContent = seaLevel;
+    updateWater();
+    invalidateExploreOnTerrainEdit();
+  });
+}
+
+function bindWarpSlider() {
+  const input = document.getElementById('warpStrength');
+  const valEl = document.getElementById('warpStrengthVal');
+  input.addEventListener('input', () => {
+    warpStrength = Number(input.value);
+    valEl.textContent = warpStrength;
+    scheduleTerrainUpdate();
+  });
+}
+
+function bindCrustSlider() {
+  const input = document.getElementById('crustFactor');
+  const valEl = document.getElementById('crustFactorVal');
+  input.addEventListener('input', () => {
+    crustFactor = Number(input.value) / 10;
+    valEl.textContent = crustFactor.toFixed(1);
+    scheduleTerrainUpdate();
+  });
+}
+
+function bindTectonicSlider() {
+  const input = document.getElementById('tectonicFactor');
+  const valEl = document.getElementById('tectonicFactorVal');
+  input.addEventListener('input', () => {
+    tectonicFactor = Number(input.value) / 10;
+    valEl.textContent = tectonicFactor.toFixed(1);
+    scheduleTerrainUpdate();
+  });
+}
+
+function bindSeedSlider() {
+  const input = document.getElementById('noiseSeed');
+  const valEl = document.getElementById('noiseSeedVal');
+  input.addEventListener('input', () => {
+    noiseSeed = Number(input.value);
+    valEl.textContent = noiseSeed;
+    pn.setSeed(noiseSeed);
+    scheduleTerrainUpdate();
+  });
+}
+
+function bindIslandToggle() {
+  const input = document.getElementById('islandMode');
+  input.addEventListener('change', () => {
+    islandMode = input.checked;
+    scheduleTerrainUpdate();
+  });
+}
+
+function bindMountainBorderToggle() {
+  const input = document.getElementById('mountainBorderMode');
+  input.addEventListener('change', () => {
+    mountainBorderMode = input.checked;
+    scheduleTerrainUpdate();
+  });
+}
+
+function bindMbSliders() {
+  for (const { id, key, valId, fmt } of [
+    { id: 'mbRadius', key: 'mbRadius', valId: 'mbRadiusVal', fmt: v => `${v}` },
+    { id: 'mbWidth', key: 'mbWidth', valId: 'mbWidthVal', fmt: v => `${v}` },
+    { id: 'mbHeight', key: 'mbHeight', valId: 'mbHeightVal', fmt: v => (v / 100).toFixed(2) },
+    { id: 'mbIrregularity', key: 'mbIrregularity', valId: 'mbIrregularityVal', fmt: v => (v / 100).toFixed(2) },
+  ]) {
+    const input = document.getElementById(id);
+    const valEl = document.getElementById(valId);
+    input.addEventListener('input', () => {
+      const v = Number(input.value);
+      if (key === 'mbRadius') mbRadius = v;
+      else if (key === 'mbWidth') mbWidth = v;
+      else if (key === 'mbHeight') mbHeight = v;
+      else if (key === 'mbIrregularity') mbIrregularity = v;
+      valEl.textContent = fmt(v);
+      scheduleTerrainUpdate();
+    });
+  }
+}
+
+function bindRiverSlider() {
+  const input = document.getElementById('riverStrength');
+  const valEl = document.getElementById('riverStrengthVal');
+  input.addEventListener('input', () => {
+    riverStrength = Number(input.value);
+    valEl.textContent = riverStrength;
+    scheduleTerrainUpdate();
+  });
+}
+
+function bindLandSizeSlider() {
+  const input = document.getElementById('landSize');
+  const valEl = document.getElementById('landSizeVal');
+  let landSizeRebuildTimer = 0;
+  input.addEventListener('input', () => {
+    landSize = Number(input.value);
+    valEl.textContent = `${landSize} x ${landSize}`;
+    clearTimeout(landSizeRebuildTimer);
+    landSizeRebuildTimer = setTimeout(() => resizeTerrain(), 150);
+  });
+  input.addEventListener('change', () => {
+    clearTimeout(landSizeRebuildTimer);
+    landSize = Number(input.value);
+    valEl.textContent = `${landSize} x ${landSize}`;
+    resizeTerrain();
+  });
+}
+
+function bindNoiseSliders() {
+  const octaveInput = document.getElementById('noiseOctaves');
+  const octaveVal = document.getElementById('noiseOctavesVal');
+  octaveInput.addEventListener('input', () => {
+    noiseOctaves = Number(octaveInput.value);
+    octaveVal.textContent = noiseOctaves;
+    scheduleTerrainUpdate();
+  });
+  const lacunarityInput = document.getElementById('noiseLacunarity');
+  const lacunarityVal = document.getElementById('noiseLacunarityVal');
+  lacunarityInput.addEventListener('input', () => {
+    noiseLacunarity = Number(lacunarityInput.value) / 10;
+    lacunarityVal.textContent = noiseLacunarity.toFixed(1);
+    scheduleTerrainUpdate();
+  });
+  const persistenceInput = document.getElementById('noisePersistence');
+  const persistenceVal = document.getElementById('noisePersistenceVal');
+  persistenceInput.addEventListener('input', () => {
+    noisePersistence = Number(persistenceInput.value) / 100;
+    persistenceVal.textContent = noisePersistence.toFixed(2);
+    scheduleTerrainUpdate();
+  });
+}
+
+async function init() {
+  try {
+    buildTextureButtons();
+    await Promise.all(Object.keys(TEXTURE_SETS).map(loadTextureSet));
+
+    buildTerrain();
+    createWater();
+    applyTextureSet(DEFAULT_TEXTURE_SET);
+    initAccordion();
+    bindLandSizeSlider();
+    bindNoiseSliders();
+    bindSunSliders();
+    bindHillSliders();
+    bindSeedSlider();
+    bindRedistSlider();
+    bindSeaLevelSlider();
+    bindWarpSlider();
+    bindCrustSlider();
+    bindTectonicSlider();
+    bindIslandToggle();
+    bindMountainBorderToggle();
+    bindMbSliders();
+    bindRiverSlider();
+
+    texScaleInput.addEventListener('input', () => {
+      setTextureSize(Number(texScaleInput.value));
+    });
+
+    texToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.tex-btn');
+      if (!btn || btn.dataset.set === activeSetKey) return;
+      applyTextureSet(btn.dataset.set);
+    });
+
+    statusEl.classList.add('hidden');
+  } catch (err) {
+    statusEl.textContent = 'Failed to load textures';
+    statusEl.classList.add('error');
+    console.error(err);
+  }
+}
+
+function onResize() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+window.addEventListener('resize', onResize);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  skyVisual.material.uniforms.time.value = performance.now() * 0.001;
+  if (appMode === 'explore') {
+    updatePlayer(dt);
+  } else {
+    controls.update();
+  }
+  renderer.render(scene, camera);
+}
+
+init();
+animate();
+</script>
+</body>
+</html>
