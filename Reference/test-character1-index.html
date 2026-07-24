@@ -539,7 +539,7 @@ init();
 
 function animate() {
   requestAnimationFrame(animate);
-  const delta = clock.getDelta();
+  const delta = Math.min(clock.getDelta(), 0.05);
 
   if (activeChar) {
     activeChar.mixer.update(delta);

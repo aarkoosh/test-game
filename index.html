@@ -1,297 +1,351 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Demo</title>
 <style>
-body { margin: 0; overflow: hidden; }
+body{margin:0;overflow:hidden;background:#0e1117;}
+canvas{display:block;}
+#loading{
+  position:fixed;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:12px;
+  background:#0e1117;color:#ccc;font:14px/1.5 system-ui,sans-serif;
+  z-index:20;transition:opacity 0.4s;
+}
+#loading.hidden{opacity:0;pointer-events:none;}
+#loading.error{color:#f66;}
 </style>
 </head>
 <body>
-
+<div id="loading">Loading…</div>
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
   }
 }
 </script>
-
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+const EXCLUDED_CLIP = 'T-Pose (No Animation)';
+const CROSSFADE = 0.25;
+const WALK_SPEED = 120;
+const ROLL_SPEED = 260;
+const ROTATION_LERP = 10;
+const GRID_SIZE = 16000;
+const FLOOR_BOUND = GRID_SIZE / 2 - 20;
+
+const loadingEl = document.getElementById('loading');
+
+function setStatus(text, isError) {
+  loadingEl.textContent = text;
+  loadingEl.classList.toggle('error', !!isError);
+}
+
+// ---------- Scene setup ----------
+
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 5000);
-camera.position.set(20, 15, 20);
-
+scene.background = new THREE.Color(0x444466);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.48;
 
-const grid = new THREE.GridHelper(200, 40, 0xffffff, 0x888888);
+scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+sun.position.set(120, 220, 160);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 2400;
+sun.shadow.camera.left = -FLOOR_BOUND;
+sun.shadow.camera.right = FLOOR_BOUND;
+sun.shadow.camera.top = FLOOR_BOUND;
+sun.shadow.camera.bottom = -FLOOR_BOUND;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0x8899bb, 0.35);
+fill.position.set(-120, 140, -80);
+scene.add(fill);
+
+const grid = new THREE.GridHelper(GRID_SIZE, 40, 0x555555, 0x333333);
+grid.position.y = 0.5;
 scene.add(grid);
 
-const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3e7a3e, 0.5);
-scene.add(hemi);
-
-const sun = new THREE.DirectionalLight(0xffeedd, 2.5);
-sun.position.set(30, 40, 15);
-sun.castShadow = true;
-sun.shadow.mapSize.width = 2048;
-sun.shadow.mapSize.height = 2048;
-sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 100;
-sun.shadow.camera.left = -50;
-sun.shadow.camera.right = 50;
-sun.shadow.camera.top = 50;
-sun.shadow.camera.bottom = -50;
-scene.add(sun);
-scene.add(sun.target);
-
-const tLoader = new THREE.TextureLoader();
-function makeTex(p, r = 20) {
-  const t = tLoader.load(p);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(r, r);
-  t.anisotropy = 4;
-  return t;
-}
-
-const loader = new GLTFLoader();
-loader.setDRACOLoader(new DRACOLoader());
-let terrainRoot = null;
-let charGroup = null;
-let charModel = null;
-let mixer = null;
-const anims = {};
-let curAnim = null;
-let grounded = true;
-let jumping = false;
-let rolling = false;
-let vertVel = 0;
-const keys = {};
-const HEIGHT = 0.05;
-
-// Load terrain
-loader.load('heightmap1.glb', (g) => {
-  terrainRoot = g.scene;
-  console.log('heightmap1.glb loaded', g);
-  console.log('scene children:', g.scene.children.length);
-  g.scene.traverse(c => console.log('  node:', c.type, c.name, 'pos:', c.position.toArray().map(v=>v.toFixed(2)), 'scale:', c.scale.toArray().map(v=>v.toFixed(2))));
-
-  g.scene.traverse(c => {
-    if (c.isMesh) {
-      const pos = c.geometry.attributes.position;
-      console.log('  MESH:', c.name, 'verts:', pos.count, 'bbox:', new THREE.Box3().setFromObject(c).getSize(new THREE.Vector3()).toArray().map(v=>v.toFixed(2)));
-      c.receiveShadow = true;
-    }
-  });
-
-  scene.add(g.scene);
-
-  const box = new THREE.Box3().setFromObject(g.scene);
-  const s = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  console.log('terrain total box size:', s.toArray().map(v=>v.toFixed(2)), 'center:', center.toArray().map(v=>v.toFixed(2)));
-
-  camera.position.set(center.x + Math.max(s.x, s.z) * 1.2, center.y + s.y * 0.8, center.z + Math.max(s.x, s.z) * 1.2);
-  controls.target.copy(center);
-  controls.update();
-
-  const half = Math.max(s.x, s.z) / 2 + 10;
-  sun.shadow.camera.left = -half;
-  sun.shadow.camera.right = half;
-  sun.shadow.camera.top = half;
-  sun.shadow.camera.bottom = -half;
-  sun.shadow.camera.far = Math.max(s.y * 2, 100);
-  sun.shadow.camera.updateProjectionMatrix();
-
-  scene.updateMatrixWorld(true);
-}, undefined, (e) => console.error('heightmap1.glb error:', e));
-
-// Load character
-loader.load('cac-1783902065521.glb', (g) => {
-  charModel = g.scene;
-  console.log('cac-1783902065521.glb loaded');
-  charModel.scale.set(0.05, 0.05, 0.05);
-  charGroup = new THREE.Group();
-  charGroup.add(charModel);
-  charGroup.position.set(0, 0, 0);
-  scene.add(charGroup);
-
-  const rootNames = new Set();
-  g.scene.children.forEach(c => rootNames.add(c.name));
-
-  mixer = new THREE.AnimationMixer(charModel);
-
-  g.animations.forEach(c => {
-    const n = c.name.toLowerCase();
-    const tracks = c.tracks.filter(t => {
-      const dot = t.name.lastIndexOf('.');
-      if (dot < 0) return true;
-      const node = t.name.substring(0, dot);
-      const prop = t.name.substring(dot);
-      if ((prop === '.position' || prop === '.scale') && rootNames.has(node)) return false;
-      return true;
-    });
-    const clip = new THREE.AnimationClip(c.name, c.duration, tracks);
-    if (n.includes('idle')) anims.idle = clip;
-    else if (n.includes('walk')) anims.walk = clip;
-    else if (n.includes('jump')) anims.jump = clip;
-    else if (n.includes('roll')) anims.roll = clip;
-    else anims[n] = clip;
-  });
-
-  playAnim('idle');
-  initChar();
-}, undefined, (e) => console.error('cac-1783902065521.glb error:', e));
-
-function playAnim(name) {
-  if (!mixer || !anims[name] || curAnim === name) return;
-  if (curAnim && anims[curAnim]) mixer.clipAction(anims[curAnim]).fadeOut(0.2);
-  const a = mixer.clipAction(anims[name]);
-  a.reset();
-  a.setLoop(name === 'jump' || name === 'roll' ? THREE.LoopOnce : THREE.LoopRepeat);
-  if (name === 'jump' || name === 'roll') a.clampWhenFinished = true;
-  a.fadeIn(0.2).play();
-  curAnim = name;
-}
-
-document.addEventListener('keydown', (e) => {
-  keys[e.code] = true;
-  if (e.code === 'Space') {
-    e.preventDefault();
-    if (grounded && !jumping && charGroup) {
-      jumping = true;
-      grounded = false;
-      vertVel = 8;
-      playAnim('jump');
-    }
-  }
-  if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
-    e.preventDefault();
-    if (grounded && anims.roll && !rolling && mixer) {
-      rolling = true;
-      const a = mixer.clipAction(anims.roll);
-      a.reset().setLoop(THREE.LoopOnce).clampWhenFinished = true;
-      if (curAnim && anims[curAnim]) mixer.clipAction(anims[curAnim]).fadeOut(0.15);
-      a.fadeIn(0.15).play();
-      curAnim = 'roll';
-      const f = () => { rolling = false; a.removeEventListener('finished', f); };
-      a.addEventListener('finished', f);
-    }
-  }
-});
-document.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-function initChar() {
-  if (!terrainRoot) return;
-  const h = getHeight(0, 0);
-  charGroup.position.y = (h > -Infinity ? h : 0) + HEIGHT;
-  grounded = true;
-  controls.target.set(charGroup.position.x, charGroup.position.y + 0.8, charGroup.position.z);
-  controls.update();
-}
-
-const _rc = new THREE.Raycaster();
-const _down = new THREE.Vector3(0, -1, 0);
-const _origin = new THREE.Vector3();
-
-function getHeight(x, z) {
-  if (!terrainRoot) return -Infinity;
-  _origin.set(x, 2000, z);
-  _rc.set(_origin, _down);
-  const h = _rc.intersectObject(terrainRoot, true);
-  return h.length > 0 ? h[0].point.y : -Infinity;
-}
-
 const clock = new THREE.Clock();
-const _fwd = new THREE.Vector3();
-const _side = new THREE.Vector3();
-const _dir = new THREE.Vector3();
-const _tgt = new THREE.Vector3();
+const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+let character = null;
 
-loop();
+// ---------- Helpers ----------
 
-function loop() {
-  const dt = Math.min(clock.getDelta(), 0.05);
-
-  if (charGroup && mixer && terrainRoot) {
-    const fwd = !!keys['KeyW'], bwd = !!keys['KeyS'];
-    const lft = !!keys['KeyA'], rgt = !!keys['KeyD'];
-
-    camera.getWorldDirection(_fwd);
-    _fwd.y = 0;
-    if (_fwd.lengthSq() < 0.001) _fwd.z = -1;
-    _fwd.normalize();
-
-    _side.crossVectors(_fwd, new THREE.Vector3(0, 1, 0)).normalize();
-
-    _dir.set(0, 0, 0);
-    if (fwd) _dir.add(_fwd);
-    if (bwd) _dir.sub(_fwd);
-    if (rgt) _dir.add(_side);
-    if (lft) _dir.sub(_side);
-
-    const moving = _dir.lengthSq() > 0;
-    if (moving) _dir.normalize();
-
-    const p = charGroup.position;
-    const nx = p.x + _dir.x * 3 * dt;
-    const nz = p.z + _dir.z * 3 * dt;
-
-    const gh = getHeight(nx, nz);
-
-    if (gh > -Infinity) {
-      const ty = gh + HEIGHT;
-      if (grounded) {
-        p.y = ty;
-      } else {
-        vertVel += -30 * dt;
-        p.y += vertVel * dt;
-        if (p.y <= ty) { p.y = ty; grounded = true; vertVel = 0; jumping = false; }
-      }
-      p.x = nx;
-      p.z = nz;
-    } else {
-      p.x = nx;
-      p.z = nz;
-      if (!grounded) { vertVel += -30 * dt; p.y += vertVel * dt; }
-      if (p.y < -10) { p.y = -10; grounded = true; vertVel = 0; jumping = false; }
+function inPlaceClip(clip) {
+  const tracks = clip.tracks.map((t) => {
+    if (t.name.includes('Hips') && t.name.endsWith('.position')) {
+      const values = t.values.slice();
+      const x0 = values[0], z0 = values[2];
+      for (let i = 0; i < values.length; i += 3) { values[i] = x0; values[i + 2] = z0; }
+      return new THREE.VectorKeyframeTrack(t.name, t.times.slice(), values);
     }
-
-    if (moving) charModel.rotation.y = Math.atan2(_dir.x, _dir.z);
-    if (grounded && !rolling) playAnim(moving ? 'walk' : 'idle');
-    mixer.update(dt);
-  }
-
-  if (charGroup) {
-    _tgt.copy(charGroup.position).add(new THREE.Vector3(0, 0.8, 0));
-    controls.target.lerp(_tgt, 0.08);
-  }
-  controls.update();
-  renderer.render(scene, camera);
-  requestAnimationFrame(loop);
+    return t;
+  });
+  return new THREE.AnimationClip(clip.name + '_inplace', clip.duration, tracks);
 }
+
+function centerModel(model) {
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  model.position.x -= center.x;
+  model.position.z -= center.z;
+  model.position.y -= box.min.y;
+  return { size, height: size.y };
+}
+
+// ---------- Animation ----------
+
+function fadeToAction(next, duration) {
+  next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+  if (character.currentAction && character.currentAction !== next) {
+    character.currentAction.crossFadeTo(next, duration, false);
+  }
+  character.currentAction = next;
+}
+
+function setGameplayState(state) {
+  character.state = state;
+  fadeToAction(character.actions[state], CROSSFADE);
+}
+
+function triggerOneShot(name) {
+  if (character.oneShot) return;
+  character.oneShot = name;
+  character.state = name;
+  fadeToAction(character.actions[name], 0.15);
+}
+
+const _dir = new THREE.Vector3();
+
+function triggerRoll() {
+  if (character.oneShot) return;
+  if (inputDirection(_dir)) {
+    character.rollDir.copy(_dir);
+    character.group.rotation.y = Math.atan2(_dir.x, _dir.z);
+  } else {
+    const a = character.group.rotation.y;
+    character.rollDir.set(Math.sin(a), 0, Math.cos(a));
+  }
+  triggerOneShot('roll');
+}
+
+function isMoving() {
+  return keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
+}
+
+// ---------- Movement ----------
+
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+
+function inputDirection(out) {
+  camera.getWorldDirection(_forward);
+  _forward.y = 0;
+  _forward.normalize();
+  _right.crossVectors(_forward, _up).normalize();
+  out.set(0, 0, 0)
+    .addScaledVector(_forward, (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0))
+    .addScaledVector(_right, (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0));
+  if (out.lengthSq() < 1e-6) return false;
+  out.normalize();
+  return true;
+}
+
+function moveGroup(dir, speed, delta) {
+  const pos = character.group.position;
+  pos.addScaledVector(dir, speed * delta);
+  pos.x = THREE.MathUtils.clamp(pos.x, -FLOOR_BOUND, FLOOR_BOUND);
+  pos.z = THREE.MathUtils.clamp(pos.z, -FLOOR_BOUND, FLOOR_BOUND);
+}
+
+function faceDirection(dir, delta) {
+  const targetAngle = Math.atan2(dir.x, dir.z);
+  let diff = targetAngle - character.group.rotation.y;
+  diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+  character.group.rotation.y += diff * Math.min(1, ROTATION_LERP * delta);
+}
+
+function updateGameplay(delta) {
+  if (character.oneShot === 'roll') {
+    moveGroup(character.rollDir, ROLL_SPEED, delta);
+    return;
+  }
+  if (character.oneShot) return;
+  const moving = isMoving();
+  if (character.state !== (moving ? 'walk' : 'idle')) setGameplayState(moving ? 'walk' : 'idle');
+  if (!moving) return;
+  if (!inputDirection(_dir)) return;
+  moveGroup(_dir, WALK_SPEED, delta);
+  faceDirection(_dir, delta);
+}
+
+// ---------- Camera ----------
+
+function followCamera() {
+  const pos = character.group.position;
+  const targetY = character.height * 0.4;
+  controls.target.set(pos.x, pos.y + targetY, pos.z);
+  controls.minDistance = character.height * 0.8;
+  controls.maxDistance = character.height * 12;
+  controls.update();
+}
+
+// ---------- Input ----------
+
+window.addEventListener('keydown', (e) => {
+  if (!character) return;
+  if (e.code in keys) { keys[e.code] = true; return; }
+  if (e.repeat) return;
+  if (e.code === 'Space') { e.preventDefault(); triggerOneShot('jump'); }
+  else if (e.code === 'ControlLeft' || e.code === 'ControlRight') { e.preventDefault(); triggerRoll(); }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.code in keys) keys[e.code] = false;
+});
 
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
+
+// ---------- Loading ----------
+
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/libs/draco/gltf/');
+const loader = new GLTFLoader();
+loader.setDRACOLoader(dracoLoader);
+
+const assetList = [
+  { name: 'cac-1783902065521.glb', loaded: 0, total: 0, done: false, phase: 'waiting' },
+  { name: 'heightmap1.glb', loaded: 0, total: 0, done: false, phase: 'waiting' },
+];
+
+function renderStatus() {
+  const lines = assetList.map(a =>
+    a.done ? a.name + ' 100%' : a.phase
+  );
+  loadingEl.innerHTML = lines.join('<br>');
+  if (assetList.every(a => a.done)) loadingEl.classList.add('hidden');
+}
+renderStatus();
+
+async function loadAll() {
+  try {
+    // character first — warms Draco decoder
+    assetList[0].phase = 'decoding…';
+    renderStatus();
+    const gltf = await new Promise((r, j) => loader.load('./cac-1783902065521.glb', r, undefined, j));
+    assetList[0].done = true;
+    assetList[0].phase = '100%';
+    renderStatus();
+    const root = gltf.scene;
+    root.traverse((child) => {
+      if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+    });
+    const group = new THREE.Group();
+    group.add(root);
+    const { height } = centerModel(root);
+    group.position.set(0, 1, 2);
+    scene.add(group);
+
+    const clips = gltf.animations.filter((c) => c.name !== EXCLUDED_CLIP);
+    const mixer = new THREE.AnimationMixer(root);
+    const byName = Object.fromEntries(clips.map((c) => [c.name, c]));
+    const actions = {
+      idle: mixer.clipAction(byName.InjuredIdle),
+      walk: mixer.clipAction(inPlaceClip(byName.CrouchedWalking)),
+      roll: mixer.clipAction(inPlaceClip(byName.SprintingForwardRoll)),
+      jump: mixer.clipAction(byName.Jump),
+    };
+    for (const name of ['jump', 'roll']) {
+      actions[name].setLoop(THREE.LoopOnce, 1);
+      actions[name].clampWhenFinished = true;
+    }
+
+    mixer.addEventListener('finished', () => {
+      character.oneShot = null;
+      setGameplayState(isMoving() ? 'walk' : 'idle');
+    });
+
+    character = { group, mixer, actions, height, state: 'idle', oneShot: null, currentAction: null, rollDir: new THREE.Vector3() };
+    setGameplayState('idle');
+    followCamera();
+    camera.lookAt(0, height * 0.4, 0);
+    controls.update();
+
+    // heightmap
+    assetList[1].phase = 'decoding…';
+    renderStatus();
+    const hDraco = new DRACOLoader();
+    hDraco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/libs/draco/gltf/');
+    const hLoader = new GLTFLoader();
+    hLoader.setDRACOLoader(hDraco);
+    const hmap = await new Promise((r, j) => hLoader.load('./heightmap1.glb', r, undefined, j));
+    assetList[1].done = true;
+    assetList[1].phase = '100%';
+    renderStatus();
+    const hRoot = hmap.scene;
+    hRoot.traverse((child) => {
+      if (!child.isMesh || !child.geometry) return;
+      child.material = new THREE.MeshStandardMaterial({ color: 0x44aa88, roughness: 0.8, metalness: 0 });
+      child.receiveShadow = true;
+    });
+    const hBox = new THREE.Box3().setFromObject(hRoot);
+    const hSize = hBox.getSize(new THREE.Vector3());
+    const s = 15000 / Math.max(hSize.x, hSize.z);
+    hRoot.scale.set(s, s, s);
+    hRoot.position.set(
+      -(hBox.min.x + hSize.x * 0.5) * s,
+      -hBox.min.y * s,
+      -(hBox.min.z + hSize.z * 0.5) * s
+    );
+    scene.add(hRoot);
+    renderStatus();
+  } catch (err) {
+    console.error(err);
+    setStatus('Failed: ' + err.message, true);
+  }
+}
+loadAll();
+
+// ---------- Render loop ----------
+
+function loop() {
+  requestAnimationFrame(loop);
+  if (!character) { renderer.render(scene, camera); return; }
+  const delta = Math.min(clock.getDelta(), 0.05);
+  character.mixer.update(delta);
+  updateGameplay(delta);
+  followCamera();
+  renderer.render(scene, camera);
+}
+loop();
 </script>
 </body>
 </html>

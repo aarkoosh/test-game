@@ -95,13 +95,13 @@ canvas.grabbing{cursor:grabbing;}
     <span>Density <output id="forest-density-val">70</output></span>
     <input type="range" id="forest-density" min="0" max="100" value="70">
   </label>
-  <h2>Rotation</h2>
+  <h2>Yaw</h2>
   <label>
-    <span>Rot X min ° <output id="forest-rotx-min-val">0</output></span>
+    <span>Yaw min ° <output id="forest-rotx-min-val">0</output></span>
     <input type="range" id="forest-rotx-min" min="0" max="360" value="0">
   </label>
   <label>
-    <span>Rot X max ° <output id="forest-rotx-max-val">360</output></span>
+    <span>Yaw max ° <output id="forest-rotx-max-val">360</output></span>
     <input type="range" id="forest-rotx-max" min="0" max="360" value="360">
   </label>
 </div>
@@ -259,7 +259,7 @@ function ensureMaterial(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
     const mat = child.material;
-    if (!mat || (mat.type === 'MeshBasicMaterial' || mat.type === 'MeshStandardMaterial' && mat.color.getHex() === 0xffffff)) {
+    if (!mat || ((mat.type === 'MeshBasicMaterial' || mat.type === 'MeshStandardMaterial') && mat.color.getHex() === 0xffffff)) {
       child.material = new THREE.MeshStandardMaterial({
         color: 0xbc9a7a,
         roughness: 0.85,
@@ -560,7 +560,7 @@ function buildInstancedForest(gltf, options, templateCache = null) {
     for (let j = 0; j < instances.length; j++) {
       const inst = instances[j];
       _dummy.position.set(inst.x, 0, inst.z);
-      // Baked geometry has trunk along Y; spin maps from mesh.rotation.x (trunk axis).
+      // Baked geometry has trunk along Y; spin maps from mesh.rotation.y (trunk axis).
       _dummy.rotation.set(0, inst.spin, 0);
       _dummy.scale.setScalar(inst.scale);
       _dummy.updateMatrix();
@@ -639,23 +639,25 @@ function scheduleForestRebuild() {
   }, 120);
 }
 
+let sceneExtent = GRID_SIZE;
+
 function fitScene(modelSize) {
   const target = modelSize * 1.4;
-  if (target <= GRID_SIZE) return;
-  const factor = target / GRID_SIZE;
-  GRID_SIZE = target;
-  scene.fog.far = GRID_SIZE * 5;
-  scene.fog.near = GRID_SIZE * 2;
-  camera.far = Math.max(camera.far, GRID_SIZE * 4);
+  if (target <= sceneExtent) return;
+  const factor = target / sceneExtent;
+  sceneExtent = target;
+  scene.fog.far = sceneExtent * 5;
+  scene.fog.near = sceneExtent * 2;
+  camera.far = Math.max(camera.far, sceneExtent * 4);
   camera.updateProjectionMatrix();
   sun.position.multiplyScalar(factor);
   fill.position.multiplyScalar(factor);
   floor.scale.setScalar(factor);
   scene.remove(grid);
-  grid = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS, 0x4a5568, 0x2d3748);
+  grid = new THREE.GridHelper(sceneExtent, GRID_DIVISIONS, 0x4a5568, 0x2d3748);
   grid.position.y = 0.01;
   scene.add(grid);
-  controls.maxDistance = GRID_SIZE * 0.8;
+  controls.maxDistance = sceneExtent * 0.8;
 }
 
 function frameModel(entry) {
