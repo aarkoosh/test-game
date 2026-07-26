@@ -40,7 +40,7 @@ canvas.grabbing{cursor:grabbing;}
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.14);
 }
 
-#forest-controls{
+#forest-controls, #terrain-controls{
   position:fixed;top:72px;right:16px;z-index:10;
   display:flex;flex-direction:column;gap:12px;
   min-width:200px;padding:14px 16px;border-radius:14px;
@@ -50,32 +50,32 @@ canvas.grabbing{cursor:grabbing;}
   border:1px solid rgba(255,255,255,0.12);
   box-shadow:0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
 }
-#forest-controls.hidden{display:none;}
-#forest-controls h2{
+#forest-controls.hidden, #terrain-controls.hidden{display:none;}
+#forest-controls h2, #terrain-controls h2{
   font:600 12px/1 system-ui,sans-serif;
   letter-spacing:0.04em;text-transform:uppercase;
   color:rgba(255,255,255,0.45);
 }
-#forest-controls label{
+#forest-controls label, #terrain-controls label{
   display:flex;flex-direction:column;gap:6px;
   font:500 12px/1 system-ui,sans-serif;color:rgba(255,255,255,0.7);
 }
-#forest-controls label span{
+#forest-controls label span, #terrain-controls label span{
   display:flex;justify-content:space-between;align-items:center;
 }
-#forest-controls output{
+#forest-controls output, #terrain-controls output{
   font:600 12px/1 ui-monospace,monospace;color:rgba(255,255,255,0.9);
 }
-#forest-controls input[type=range]{
+#forest-controls input[type=range], #terrain-controls input[type=range]{
   width:100%;height:4px;appearance:none;border-radius:999px;
   background:rgba(255,255,255,0.14);outline:none;cursor:pointer;
 }
-#forest-controls input[type=range]::-webkit-slider-thumb{
+#forest-controls input[type=range]::-webkit-slider-thumb, #terrain-controls input[type=range]::-webkit-slider-thumb{
   appearance:none;width:14px;height:14px;border-radius:50%;
   background:#fff;border:2px solid rgba(255,255,255,0.35);
   box-shadow:0 2px 8px rgba(0,0,0,0.35);
 }
-#forest-controls input[type=range]::-moz-range-thumb{
+#forest-controls input[type=range]::-moz-range-thumb, #terrain-controls input[type=range]::-moz-range-thumb{
   width:14px;height:14px;border-radius:50%;
   background:#fff;border:2px solid rgba(255,255,255,0.35);
   box-shadow:0 2px 8px rgba(0,0,0,0.35);
@@ -95,14 +95,34 @@ canvas.grabbing{cursor:grabbing;}
     <span>Density <output id="forest-density-val">70</output></span>
     <input type="range" id="forest-density" min="0" max="100" value="70">
   </label>
-  <h2>Yaw</h2>
+  <h2>Rotation</h2>
   <label>
-    <span>Yaw min ° <output id="forest-rotx-min-val">0</output></span>
+    <span>Rot X min ° <output id="forest-rotx-min-val">0</output></span>
     <input type="range" id="forest-rotx-min" min="0" max="360" value="0">
   </label>
   <label>
-    <span>Yaw max ° <output id="forest-rotx-max-val">360</output></span>
+    <span>Rot X max ° <output id="forest-rotx-max-val">360</output></span>
     <input type="range" id="forest-rotx-max" min="0" max="360" value="360">
+  </label>
+</div>
+<div id="terrain-controls" class="hidden">
+  <h2>Terrain</h2>
+  <label>
+    <span>Height Scale <output id="terrain-height-val">120</output></span>
+    <input type="range" id="terrain-height" min="1" max="500" value="120">
+  </label>
+  <label>
+    <span>Roughness <output id="terrain-roughness-val">85</output></span>
+    <input type="range" id="terrain-roughness" min="0" max="100" value="85">
+  </label>
+  <h2>Water</h2>
+  <label>
+    <span>Level <output id="terrain-water-level-val">20</output></span>
+    <input type="range" id="terrain-water-level" min="0" max="100" value="20">
+  </label>
+  <label>
+    <span>Opacity <output id="terrain-water-opacity-val">40</output></span>
+    <input type="range" id="terrain-water-opacity" min="0" max="100" value="40">
   </label>
 </div>
 <div id="status">Loading…</div>
@@ -133,6 +153,16 @@ const MODELS = [
   },
   { id: 'trees', label: 'Trees & Bushes', url: './trees_and_bush_pack_lowpoly.glb' },
   { id: 'heightmap', label: 'Heightmap', url: './heightmap1.glb' },
+  {
+    id: 'char2',
+    label: 'Character 2',
+    url: './cac-1783902065521.glb',
+    character: {
+      mode: 'gameplay',
+      clips: { idle: 'InjuredIdle', walk: 'CrouchedWalking', jump: 'Jump', roll: 'SprintingForwardRoll' },
+    },
+  },
+  { id: 'terrain', label: 'Terrain (JPG)', type: 'heightmap-image', url: './n40_w090_1arc_v3.jpg' },
 ];
 
 const canvas = document.getElementById('c');
@@ -147,9 +177,28 @@ const forestCountVal = document.getElementById('forest-count-val');
 const forestDensityVal = document.getElementById('forest-density-val');
 const forestRotXMinVal = document.getElementById('forest-rotx-min-val');
 const forestRotXMaxVal = document.getElementById('forest-rotx-max-val');
+const terrainControlsEl = document.getElementById('terrain-controls');
+const terrainHeightInput = document.getElementById('terrain-height');
+const terrainRoughnessInput = document.getElementById('terrain-roughness');
+const terrainWaterLevelInput = document.getElementById('terrain-water-level');
+const terrainWaterOpacityInput = document.getElementById('terrain-water-opacity');
+const terrainHeightVal = document.getElementById('terrain-height-val');
+const terrainRoughnessVal = document.getElementById('terrain-roughness-val');
+const terrainWaterLevelVal = document.getElementById('terrain-water-level-val');
+const terrainWaterOpacityVal = document.getElementById('terrain-water-opacity-val');
 
 let autumnEntry = null;
 let forestRebuildTimer = 0;
+let terrainEntry = null;
+
+const EXCLUDED_CLIP = 'T-Pose (No Animation)';
+const CROSSFADE_DURATION = 0.25;
+const ONESHOT_FADE = 0.15;
+const WALK_SPEED = 120;
+const ROLL_SPEED = 260;
+const ROTATION_LERP = 10;
+const FLOOR_BOUND = 780;
+const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
 
 const windUniforms = { uTime: { value: 0 } };
 const _dummy = new THREE.Object3D();
@@ -259,7 +308,7 @@ function ensureMaterial(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
     const mat = child.material;
-    if (!mat || ((mat.type === 'MeshBasicMaterial' || mat.type === 'MeshStandardMaterial') && mat.color.getHex() === 0xffffff)) {
+    if (!mat || (mat.type === 'MeshBasicMaterial' || mat.type === 'MeshStandardMaterial' && mat.color.getHex() === 0xffffff)) {
       child.material = new THREE.MeshStandardMaterial({
         color: 0xbc9a7a,
         roughness: 0.85,
@@ -396,6 +445,209 @@ function repairMissingTrunks(root) {
   trunk.position.set(0, 0, 0);
   pine1.add(trunk);
 }
+
+// ---------- Character 2 helpers ----------
+
+function inPlaceClip(clip) {
+  const tracks = clip.tracks.map((t) => {
+    if (t.name.includes('Hips') && t.name.endsWith('.position')) {
+      const values = t.values.slice();
+      const x0 = values[0];
+      const z0 = values[2];
+      for (let i = 0; i < values.length; i += 3) {
+        values[i] = x0;
+        values[i + 2] = z0;
+      }
+      return new THREE.VectorKeyframeTrack(t.name, t.times.slice(), values);
+    }
+    return t;
+  });
+  return new THREE.AnimationClip(clip.name + '_inplace', clip.duration, tracks);
+}
+
+function centerCharacterModel(model) {
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  model.position.x -= center.x;
+  model.position.z -= center.z;
+  model.position.y -= box.min.y;
+  return size.y;
+}
+
+async function loadCharacterGltf(def) {
+  const res = await fetch(def.url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const total = Number(res.headers.get('Content-Length')) || 0;
+  const reader = res.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : null;
+    setStatus(pct !== null ? `Loading ${def.label}… ${pct}%` : `Loading ${def.label}… ${(loaded / 1048576).toFixed(1)} MB`);
+  }
+  const buffer = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
+  return new Promise((resolve, reject) => { new GLTFLoader().parse(buffer.buffer, '', resolve, reject); });
+}
+
+function fadeToAction(entry, next, duration) {
+  next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+  if (entry.currentAction && entry.currentAction !== next) {
+    entry.currentAction.crossFadeTo(next, duration, false);
+  }
+  entry.currentAction = next;
+}
+
+function setGameplayState(char, state) {
+  char.state = state;
+  fadeToAction(char, char.actions[state], CROSSFADE_DURATION);
+}
+
+function triggerOneShot(char, name) {
+  if (char.oneShot) return;
+  char.oneShot = name;
+  char.state = name;
+  fadeToAction(char, char.actions[name], ONESHOT_FADE);
+}
+
+const _forward = new THREE.Vector3();
+const _right2 = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+
+function inputDirection(out) {
+  camera.getWorldDirection(_forward);
+  _forward.y = 0;
+  _forward.normalize();
+  _right2.crossVectors(_forward, _up).normalize();
+  out.set(0, 0, 0)
+    .addScaledVector(_forward, (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0))
+    .addScaledVector(_right2, (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0));
+  if (out.lengthSq() < 1e-6) return false;
+  out.normalize();
+  return true;
+}
+
+function moveGroup(char, dir, speed, delta) {
+  const pos = char.group.position;
+  pos.addScaledVector(dir, speed * delta);
+  pos.x = THREE.MathUtils.clamp(pos.x, -FLOOR_BOUND, FLOOR_BOUND);
+  pos.z = THREE.MathUtils.clamp(pos.z, -FLOOR_BOUND, FLOOR_BOUND);
+}
+
+function faceDirection(char, dir, delta) {
+  const targetAngle = Math.atan2(dir.x, dir.z);
+  let diff = targetAngle - char.group.rotation.y;
+  diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+  char.group.rotation.y += diff * Math.min(1, ROTATION_LERP * delta);
+}
+
+function updateGameplay(char, delta) {
+  if (char.oneShot === 'roll') {
+    moveGroup(char, char.rollDir, ROLL_SPEED, delta);
+    return;
+  }
+  if (char.oneShot) return;
+  const moving = keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
+  const want = moving ? 'walk' : 'idle';
+  if (char.state !== want) setGameplayState(char, want);
+  if (!moving) return;
+  if (!inputDirection(_dir)) return;
+  moveGroup(char, _dir, WALK_SPEED, delta);
+  faceDirection(char, _dir, delta);
+}
+
+function triggerRoll(char) {
+  if (char.oneShot) return;
+  if (inputDirection(_dir)) {
+    char.rollDir.copy(_dir);
+    char.group.rotation.y = Math.atan2(_dir.x, _dir.z);
+  } else {
+    const a = char.group.rotation.y;
+    char.rollDir.set(Math.sin(a), 0, Math.cos(a));
+  }
+  triggerOneShot(char, 'roll');
+}
+
+function frameCameraChar(char) {
+  const h = char.height;
+  const pos = char.group.position;
+  controls.target.set(pos.x, pos.y + h * 0.4, pos.z);
+  camera.position.set(pos.x, pos.y + h * 0.55, pos.z + h * 2);
+  controls.minDistance = h * 0.8;
+  controls.maxDistance = h * 6;
+  camera.near = Math.max(1, h * 0.1);
+  camera.far = Math.max(2000, h * 20);
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+function followCameraChar(char) {
+  const pos = char.group.position;
+  const target = new THREE.Vector3(pos.x, pos.y + char.height * 0.4, pos.z);
+  const delta = target.clone().sub(controls.target);
+  if (delta.lengthSq() < 1e-10) return;
+  camera.position.add(delta);
+  controls.target.add(delta);
+}
+
+function stopCharacter(char) {
+  char.mixer.stopAllAction();
+  char.currentAction = null;
+  char.oneShot = null;
+}
+
+function resetToIdle(char) {
+  char.currentAction = null;
+  char.oneShot = null;
+  char.group.rotation.y = 0;
+  setGameplayState(char, 'idle');
+}
+
+// ---------- Terrain / Water ----------
+
+function updateTerrain(entry) {
+  const scale = parseFloat(terrainHeightInput.value);
+  const rough = parseFloat(terrainRoughnessInput.value) / 100;
+  const pos = entry.mesh.geometry.attributes.position;
+  const arr = pos.array;
+  const nh = entry._normalizedHeights;
+  for (let i = 0; i < pos.count; i++) {
+    arr[i * 3 + 1] = nh[i] * scale;
+  }
+  pos.needsUpdate = true;
+  entry.mesh.geometry.computeVertexNormals();
+  entry.mesh.geometry.computeBoundingBox();
+  entry.mesh.geometry.computeBoundingSphere();
+  entry.material.roughness = rough;
+  entry.heightScale = scale;
+
+  const fb = new THREE.Box3().setFromObject(entry.group);
+  const s = fb.getSize(new THREE.Vector3());
+  entry.height = s.y;
+  entry.size = s;
+  updateWater(entry);
+  terrainHeightVal.textContent = scale;
+  terrainRoughnessVal.textContent = Math.round(rough * 100);
+}
+
+function updateWater(entry) {
+  const pct = parseFloat(terrainWaterLevelInput.value) / 100;
+  const op = parseFloat(terrainWaterOpacityInput.value) / 100;
+  const h = entry.heightScale;
+  entry.waterMesh.position.y = Math.max(0.1, h * pct);
+  entry.waterMat.opacity = op;
+  terrainWaterLevelVal.textContent = Math.round(pct * 100);
+  terrainWaterOpacityVal.textContent = Math.round(op * 100);
+}
+
+// ---------- Forest helpers ----------
 
 function mulberry32(seed) {
   return () => {
@@ -560,7 +812,7 @@ function buildInstancedForest(gltf, options, templateCache = null) {
     for (let j = 0; j < instances.length; j++) {
       const inst = instances[j];
       _dummy.position.set(inst.x, 0, inst.z);
-      // Baked geometry has trunk along Y; spin maps from mesh.rotation.y (trunk axis).
+      // Baked geometry has trunk along Y; spin maps from mesh.rotation.x (trunk axis).
       _dummy.rotation.set(0, inst.spin, 0);
       _dummy.scale.setScalar(inst.scale);
       _dummy.updateMatrix();
@@ -639,25 +891,23 @@ function scheduleForestRebuild() {
   }, 120);
 }
 
-let sceneExtent = GRID_SIZE;
-
 function fitScene(modelSize) {
   const target = modelSize * 1.4;
-  if (target <= sceneExtent) return;
-  const factor = target / sceneExtent;
-  sceneExtent = target;
-  scene.fog.far = sceneExtent * 5;
-  scene.fog.near = sceneExtent * 2;
-  camera.far = Math.max(camera.far, sceneExtent * 4);
+  if (target <= GRID_SIZE) return;
+  const factor = target / GRID_SIZE;
+  GRID_SIZE = target;
+  scene.fog.far = GRID_SIZE * 5;
+  scene.fog.near = GRID_SIZE * 2;
+  camera.far = Math.max(camera.far, GRID_SIZE * 4);
   camera.updateProjectionMatrix();
   sun.position.multiplyScalar(factor);
   fill.position.multiplyScalar(factor);
   floor.scale.setScalar(factor);
   scene.remove(grid);
-  grid = new THREE.GridHelper(sceneExtent, GRID_DIVISIONS, 0x4a5568, 0x2d3748);
+  grid = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS, 0x4a5568, 0x2d3748);
   grid.position.y = 0.01;
   scene.add(grid);
-  controls.maxDistance = sceneExtent * 0.8;
+  controls.maxDistance = GRID_SIZE * 0.8;
 }
 
 function frameModel(entry) {
@@ -676,8 +926,181 @@ function frameModel(entry) {
   controls.update();
 }
 
+async function loadHeightmapImage(def) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error(`Failed to load image: ${def.url}`));
+    img.src = def.url;
+  });
+
+  const cv = document.createElement('canvas');
+  const size = Math.min(img.width, img.height, 512);
+  cv.width = size;
+  cv.height = size;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(img, 0, 0, size, size);
+  const { data } = ctx.getImageData(0, 0, size, size);
+
+  const segments = Math.min(size - 1, 255);
+  const geometry = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE, segments, segments);
+  geometry.rotateX(-Math.PI / 2);
+
+  const uv = geometry.attributes.uv;
+  const pos = geometry.attributes.position;
+  let minH = Infinity, maxH = -Infinity;
+  const heights = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const px = Math.min(Math.floor(uv.getX(i) * size), size - 1);
+    const py = Math.min(Math.floor((1 - uv.getY(i)) * size), size - 1);
+    const idx = (py * size + px) * 4;
+    const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+    const h = (r * 256 * 256 + g * 256 + b) / 65535.0;
+    heights[i] = h;
+    if (h < minH) minH = h;
+    if (h > maxH) maxH = h;
+  }
+  const range = maxH - minH || 1;
+  const heightScale = 120;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, ((heights[i] - minH) / range) * heightScale);
+  }
+
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+
+  const cSand = new THREE.Color(0xd4b48c);
+  const cGrass = new THREE.Color(0x5a8c4a);
+  const cStone = new THREE.Color(0x8a8a8a);
+  const cSnow = new THREE.Color(0xececec);
+  const colors = new Float32Array(pos.count * 3);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const t = (heights[i] - minH) / range;
+    if (t < 0.3) {
+      tmp.copy(cSand).lerp(cGrass, t / 0.3);
+    } else if (t < 0.65) {
+      tmp.copy(cGrass).lerp(cStone, (t - 0.3) / 0.35);
+    } else {
+      tmp.copy(cStone).lerp(cSnow, (t - 0.65) / 0.35);
+    }
+    colors[i * 3] = tmp.r;
+    colors[i * 3 + 1] = tmp.g;
+    colors[i * 3 + 2] = tmp.b;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.85,
+    metalness: 0.05,
+    side: THREE.DoubleSide,
+    flatShading: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  const box = new THREE.Box3().setFromObject(mesh);
+  const sz = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  mesh.position.x -= center.x;
+  mesh.position.z -= center.z;
+  mesh.position.y -= box.min.y;
+
+  const waterMat = new THREE.MeshPhysicalMaterial({
+    color: 0x3a7bd5,
+    transparent: true,
+    opacity: 0.4,
+    roughness: 0.1,
+    metalness: 0.05,
+    side: THREE.DoubleSide,
+    envMapIntensity: 0.4,
+  });
+  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE), waterMat);
+  waterMesh.rotation.x = -Math.PI / 2;
+  waterMesh.position.y = heightScale * 0.2;
+  waterMesh.renderOrder = 1;
+
+  const group = new THREE.Group();
+  group.visible = false;
+  group.add(mesh);
+  group.add(waterMesh);
+  scene.add(group);
+
+  const finalBox = new THREE.Box3().setFromObject(group);
+  const finalSize = finalBox.getSize(new THREE.Vector3());
+  const entry = {
+    def,
+    group,
+    root: group,
+    mixer: null,
+    size: finalSize,
+    height: finalSize.y,
+    isForest: false,
+    isTerrain: true,
+    mesh,
+    material,
+    waterMesh,
+    waterMat,
+    heightScale,
+    _normalizedHeights: new Float32Array(pos.count),
+  };
+  for (let i = 0; i < pos.count; i++) {
+    entry._normalizedHeights[i] = (heights[i] - minH) / range;
+  }
+  return entry;
+}
+
 async function loadModel(def) {
   setStatus(`Loading ${def.label}…`);
+
+  if (def.type === 'heightmap-image') {
+    return loadHeightmapImage(def);
+  }
+
+  if (def.character) {
+    const gltf = await loadCharacterGltf(def);
+    setStatus(`Processing ${def.label}…`);
+    await new Promise((r) => setTimeout(r));
+
+    const model = gltf.scene;
+    model.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+
+    const group = new THREE.Group();
+    group.add(model);
+    const height = centerCharacterModel(model);
+    group.visible = false;
+    scene.add(group);
+
+    const mixer = new THREE.AnimationMixer(model);
+    const clips = gltf.animations.filter((c) => c.name !== EXCLUDED_CLIP);
+
+    const entry = { def, group, mixer, height, clips, currentAction: null, clipIndex: 0, oneShot: null, actions: {}, rollDir: new THREE.Vector3(), isCharacter: true };
+
+    if (def.character.mode === 'gameplay') {
+      const byName = Object.fromEntries(clips.map((c) => [c.name, c]));
+      entry.actions.idle = mixer.clipAction(byName[def.character.clips.idle]);
+      entry.actions.walk = mixer.clipAction(inPlaceClip(byName[def.character.clips.walk]));
+      entry.actions.roll = mixer.clipAction(inPlaceClip(byName[def.character.clips.roll]));
+      entry.actions.jump = mixer.clipAction(byName[def.character.clips.jump]);
+      for (const name of ['jump', 'roll']) {
+        entry.actions[name].setLoop(THREE.LoopOnce, 1);
+        entry.actions[name].clampWhenFinished = true;
+      }
+      entry.state = 'idle';
+      mixer.addEventListener('finished', () => {
+        entry.oneShot = null;
+        const moving = keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
+        setGameplayState(entry, moving ? 'walk' : 'idle');
+      });
+    }
+
+    return entry;
+  }
 
   const gltf = await new Promise((resolve, reject) => {
     loader.load(def.url, resolve, undefined, reject);
@@ -734,7 +1157,12 @@ async function loadModel(def) {
 
 function setActiveEntry(entry) {
   const changed = activeEntry !== entry;
+
+  if (changed && activeEntry?.isCharacter) stopCharacter(activeEntry);
+
   activeEntry = entry;
+
+  for (const key of Object.keys(keys)) keys[key] = false;
 
   for (const item of entries) {
     item.group.visible = item === entry;
@@ -746,9 +1174,22 @@ function setActiveEntry(entry) {
 
   const showForestControls = entry.isForest;
   forestControlsEl.classList.toggle('hidden', !showForestControls);
-  if (showForestControls) syncForestControlsUI(entry.forestParams);
+  const showTerrainControls = entry.isTerrain;
+  terrainControlsEl.classList.toggle('hidden', !showTerrainControls);
 
-  if (changed) frameModel(entry);
+  if (entry.isCharacter) {
+    resetToIdle(entry);
+    if (changed) frameCameraChar(entry);
+  } else if (entry.isTerrain) {
+    if (changed) {
+      terrainEntry = entry;
+      terrainHeightInput.value = entry.heightScale;
+      terrainHeightVal.textContent = entry.heightScale;
+      frameModel(entry);
+    }
+  } else {
+    if (changed) frameModel(entry);
+  }
 }
 
 function buildTabs() {
@@ -769,6 +1210,23 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+window.addEventListener('keydown', (e) => {
+  if (!activeEntry?.isCharacter) return;
+  if (e.code in keys) { keys[e.code] = true; return; }
+  if (e.repeat) return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    triggerOneShot(activeEntry, 'jump');
+  } else if ((e.code === 'ControlLeft' || e.code === 'ControlRight')) {
+    e.preventDefault();
+    triggerRoll(activeEntry);
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.code in keys) keys[e.code] = false;
+});
+
 async function init() {
   try {
     for (const def of MODELS) {
@@ -781,6 +1239,10 @@ async function init() {
     forestDensityInput.addEventListener('input', scheduleForestRebuild);
     forestRotXMinInput.addEventListener('input', scheduleForestRebuild);
     forestRotXMaxInput.addEventListener('input', scheduleForestRebuild);
+    terrainHeightInput.addEventListener('input', () => { if (terrainEntry) updateTerrain(terrainEntry); });
+    terrainRoughnessInput.addEventListener('input', () => { if (terrainEntry) updateTerrain(terrainEntry); });
+    terrainWaterLevelInput.addEventListener('input', () => { if (terrainEntry) updateWater(terrainEntry); });
+    terrainWaterOpacityInput.addEventListener('input', () => { if (terrainEntry) updateWater(terrainEntry); });
     setActiveEntry(entries[0]);
     setStatus('');
   } catch (err) {
@@ -793,7 +1255,11 @@ function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
 
-  if (activeEntry?.isForest) {
+  if (activeEntry?.isCharacter) {
+    activeEntry.mixer.update(delta);
+    updateGameplay(activeEntry, delta);
+    followCameraChar(activeEntry);
+  } else if (activeEntry?.isForest) {
     windUniforms.uTime.value = clock.elapsedTime;
   } else if (activeEntry?.mixer) {
     activeEntry.mixer.update(delta);
