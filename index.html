@@ -51,18 +51,15 @@ const FOREST_REF_SIZE = 8000;
 const FOREST_SIZE_SCALE = TERRAIN_SIZE / FOREST_REF_SIZE;
 const FOREST_TREE_COUNT = 350000;
 const FOREST_SEED = 42;
-const TERRAIN_FOREST_GRASS_WEIGHT_MIN = 0.58;
-const TERRAIN_FOREST_HEIGHT_MIN = HEIGHT_SCALE * 0.0035;
-const TERRAIN_FOREST_HEIGHT_MAX = HEIGHT_SCALE * 0.009;
+const TERRAIN_FOREST_GRASS_WEIGHT_MIN = 0.32;
+const TERRAIN_FOREST_HEIGHT_MIN = HEIGHT_SCALE * 0.008;
+const TERRAIN_FOREST_HEIGHT_MAX = HEIGHT_SCALE * 0.02;
 const TERRAIN_FOREST_CHUNK_SIZE = 400 * FOREST_SIZE_SCALE;
-const TERRAIN_FOREST_VIEW_DISTANCE = 650 * FOREST_SIZE_SCALE;
-const TERRAIN_FOREST_VIEW_HYSTERESIS = 120 * FOREST_SIZE_SCALE;
 const TERRAIN_FOREST_PLACEMENT_BATCH_MS = 14;
 const TERRAIN_FOREST_BUILD_BATCH_MS = 12;
-const TERRAIN_FOREST_BARE_CUTOFF = 0.38;
+const TERRAIN_FOREST_BARE_CUTOFF = 0.16;
 const FOREST_TREE_MODELS = [
-  { url: './oak_tree.glb', name: 'oak' },
-  { url: './old_olive_tree.glb', name: 'olive' },
+  { url: './pine_tree.glb', name: 'pine' },
 ];
 
 const loadingEl = document.getElementById('loading');
@@ -171,13 +168,10 @@ let terrainForestSystem = null;
 let forestTemplatesPromise = null;
 let forestDensityNoise = null;
 let terrainForestBuildGeneration = 0;
-let forestVisibilityTick = 0;
 
 const _dummy = new THREE.Object3D();
 const _v = new THREE.Vector3();
 const _box = new THREE.Box3();
-const _forestCamLocal = new THREE.Vector3();
-const _forestCamLast = new THREE.Vector3();
 
 // ---------- Terrain collision ----------
 
@@ -261,7 +255,11 @@ function configureForestMaterial(mat) {
   mat.side = THREE.DoubleSide;
   if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
   if (mat.emissiveMap) mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
-  if (isAlphaBlendMaterial(mat)) {
+  if (mat.alphaMode === 'MASK') {
+    mat.transparent = true;
+    mat.alphaTest = mat.alphaCutoff ?? 0.5;
+    mat.depthWrite = true;
+  } else if (isAlphaBlendMaterial(mat)) {
     mat.transparent = true;
     mat.depthWrite = false;
     mat.alphaTest = 0;
@@ -497,8 +495,7 @@ async function buildAllTerrainForestChunksAsync(system, generation) {
         const trees = system.chunkBins.get(key);
         const group = buildTerrainForestChunkGroup(trees, system.templates);
         prepareMeshes(group);
-        group.visible = false;
-        system.builtChunks.set(key, { key, trees, group, visible: false });
+        system.builtChunks.set(key, { key, trees, group });
         system.root.add(group);
         system.instancedMeshes.push(...group.userData.instancedMeshes);
         index++;
@@ -513,47 +510,6 @@ async function buildAllTerrainForestChunksAsync(system, generation) {
   });
 
   return generation === terrainForestBuildGeneration;
-}
-
-function terrainForestChunkCenter(key) {
-  const [cx, cz] = key.split(',').map(Number);
-  return {
-    x: (cx + 0.5) * TERRAIN_FOREST_CHUNK_SIZE,
-    z: (cz + 0.5) * TERRAIN_FOREST_CHUNK_SIZE,
-  };
-}
-
-function updateForestChunkVisibility() {
-  const system = terrainForestSystem;
-  if (!system?.builtChunks.size || !terrainGroup) return;
-
-  _forestCamLocal.copy(camera.position);
-  terrainGroup.worldToLocal(_forestCamLocal);
-
-  for (const chunk of system.builtChunks.values()) {
-    const center = terrainForestChunkCenter(chunk.key);
-    const dist = Math.hypot(_forestCamLocal.x - center.x, _forestCamLocal.z - center.z);
-    const limit = chunk.visible
-      ? TERRAIN_FOREST_VIEW_DISTANCE + TERRAIN_FOREST_VIEW_HYSTERESIS
-      : TERRAIN_FOREST_VIEW_DISTANCE;
-    const nextVisible = dist < limit;
-    if (nextVisible !== chunk.visible) {
-      chunk.visible = nextVisible;
-      chunk.group.visible = nextVisible;
-    }
-  }
-}
-
-function maybeUpdateForestChunkVisibility() {
-  if (!terrainForestSystem?.builtChunks.size) return;
-  forestVisibilityTick++;
-  if (forestVisibilityTick % 4 !== 0) return;
-
-  _forestCamLocal.copy(camera.position);
-  terrainGroup.worldToLocal(_forestCamLocal);
-  if (_forestCamLocal.distanceToSquared(_forestCamLast) < 2500 * FOREST_SIZE_SCALE) return;
-  _forestCamLast.copy(_forestCamLocal);
-  updateForestChunkVisibility();
 }
 
 function getForestDensityNoise(seed) {
@@ -572,32 +528,32 @@ function forestRegionDensity(x, z, seed) {
   const clumpNorm = clump * 0.5 + 0.5;
   const microNorm = micro * 0.5 + 0.5;
   if (regionNorm < TERRAIN_FOREST_BARE_CUTOFF) return 0;
-  const regionWeight = terrainSmoothstep(TERRAIN_FOREST_BARE_CUTOFF, 0.68, regionNorm);
-  const clumpWeight = terrainSmoothstep(0.28, 0.92, clumpNorm);
-  const clumpSharp = clumpWeight * clumpWeight * clumpWeight * clumpWeight;
-  const microBoost = terrainSmoothstep(0.55, 0.95, microNorm);
-  return regionWeight * (0.02 + clumpSharp * (0.78 + microBoost * 0.2));
+  const regionWeight = terrainSmoothstep(TERRAIN_FOREST_BARE_CUTOFF, 0.58, regionNorm);
+  const clumpWeight = terrainSmoothstep(0.18, 0.88, clumpNorm);
+  const clumpSharp = clumpWeight * clumpWeight * clumpWeight;
+  const microBoost = terrainSmoothstep(0.45, 0.92, microNorm);
+  return regionWeight * (0.12 + clumpSharp * (0.88 + microBoost * 0.12));
 }
 
 function forestPlacementChance(density) {
   if (density <= 0) return 0;
-  return Math.min(1, density * density * 1.2 + density * 0.45);
+  return Math.min(1, density * 0.95 + 0.62);
 }
 
 function scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed) {
-  const extraCount = Math.floor(cellRng() * (4 + density * density * 48));
-  const jitter = spacing * (density > 0.82 ? 0.06 : density > 0.62 ? 0.11 : 0.18);
+  const extraCount = Math.floor(cellRng() * (10 + density * density * 90));
+  const jitter = spacing * (density > 0.75 ? 0.035 : density > 0.5 ? 0.055 : 0.085);
   for (let e = 0; e < extraCount && countRef.value < targetCount; e++) {
     const jx = x + (cellRng() - 0.5) * jitter;
     const jz = z + (cellRng() - 0.5) * jitter;
     const clumpDensity = forestRegionDensity(jx, jz, seed);
-    if (clumpDensity < density * 0.35) continue;
+    if (clumpDensity < density * 0.18) continue;
     tryPlaceForestTree(entry, jx, jz, cellRng, chunkBins, waterY, countRef);
   }
 
-  if (density > 0.78 && countRef.value < targetCount) {
-    const ultraCount = Math.floor(cellRng() * (10 + density * 28));
-    const ultraJitter = spacing * 0.04;
+  if (density > 0.55 && countRef.value < targetCount) {
+    const ultraCount = Math.floor(cellRng() * (18 + density * 45));
+    const ultraJitter = spacing * 0.022;
     for (let e = 0; e < ultraCount && countRef.value < targetCount; e++) {
       const jx = x + (cellRng() - 0.5) * ultraJitter;
       const jz = z + (cellRng() - 0.5) * ultraJitter;
@@ -616,7 +572,7 @@ function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef) {
     z,
     scale: THREE.MathUtils.lerp(TERRAIN_FOREST_HEIGHT_MIN, TERRAIN_FOREST_HEIGHT_MAX, cellRng()),
     spin: cellRng() * Math.PI * 2,
-    type: Math.floor(cellRng() * 2),
+    type: 0,
   });
   countRef.value++;
   return true;
@@ -626,7 +582,7 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
   const waterY = entry.waterMesh?.position.y ?? 0;
   const half = TERRAIN_SIZE * 0.47;
   const area = (half * 2) ** 2;
-  const spacing = Math.sqrt(area / Math.max(1, targetCount * 1.8));
+  const spacing = Math.sqrt(area / Math.max(1, targetCount * 0.85));
   const chunkBins = new Map();
   const countRef = { value: 0 };
 
@@ -634,7 +590,7 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
     const density = forestRegionDensity(x, z, seed);
     if (density <= 0 || cellRng() > forestPlacementChance(density)) return false;
     if (!tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef)) return false;
-    if (density > 0.32) scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed);
+    if (density > 0.15) scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed);
     return true;
   };
 
@@ -675,7 +631,7 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
   if (countRef.value < targetCount) {
     const fillRng = mulberry32(seed + 99991);
     let fillAttempts = 0;
-    const fillMax = Math.max(targetCount * 24, 40000);
+    const fillMax = Math.max(targetCount * 40, 80000);
     await new Promise((resolve) => {
       const step = () => {
         if (generation !== terrainForestBuildGeneration) {
@@ -692,9 +648,10 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
           const x = (fillRng() * 2 - 1) * half;
           const z = (fillRng() * 2 - 1) * half;
           const density = forestRegionDensity(x, z, seed);
-          if (density <= 0.3 || fillRng() > Math.min(1, density * density * 1.05)) continue;
+          if (density <= 0.06) continue;
+          if (fillRng() > Math.min(1, density * 0.95 + 0.35)) continue;
           if (!tryPlaceForestTree(entry, x, z, fillRng, chunkBins, waterY, countRef)) continue;
-          if (density > 0.45) scatterDenseClump(entry, x, z, density, spacing, fillRng, chunkBins, waterY, countRef, targetCount, seed);
+          if (density > 0.2) scatterDenseClump(entry, x, z, density, spacing, fillRng, chunkBins, waterY, countRef, targetCount, seed);
         }
         if (countRef.value >= targetCount || fillAttempts >= fillMax) {
           resolve();
@@ -706,8 +663,51 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
     });
   }
 
+  if (countRef.value < targetCount) {
+    const topUpRng = mulberry32(seed + 77777);
+    let topUpAttempts = 0;
+    const topUpMax = Math.max((targetCount - countRef.value) * 40, 100000);
+    await new Promise((resolve) => {
+      const step = () => {
+        if (generation !== terrainForestBuildGeneration) {
+          resolve();
+          return;
+        }
+        const start = performance.now();
+        while (
+          countRef.value < targetCount
+          && topUpAttempts < topUpMax
+          && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS
+        ) {
+          topUpAttempts++;
+          const x = (topUpRng() * 2 - 1) * half;
+          const z = (topUpRng() * 2 - 1) * half;
+          tryPlaceForestTree(entry, x, z, topUpRng, chunkBins, waterY, countRef);
+        }
+        if (countRef.value >= targetCount || topUpAttempts >= topUpMax) {
+          resolve();
+          return;
+        }
+        requestAnimationFrame(step);
+      };
+      step();
+    });
+  }
+
   if (generation !== terrainForestBuildGeneration) return null;
+  console.info(`Forest placed ${countRef.value.toLocaleString()} / ${targetCount.toLocaleString()} trees`);
   return { chunkBins, count: countRef.value };
+}
+
+function pickForestSpawnTree(chunkBins) {
+  const keys = [...chunkBins.keys()];
+  if (!keys.length) return null;
+  const rng = mulberry32(FOREST_SEED + 123456);
+  for (let i = 0; i < 400; i++) {
+    const trees = chunkBins.get(keys[Math.floor(rng() * keys.length)]);
+    if (trees?.length) return trees[Math.floor(rng() * trees.length)];
+  }
+  return null;
 }
 
 function findForestSpawn(entry, seed) {
@@ -720,7 +720,7 @@ function findForestSpawn(entry, seed) {
     const x = (rng() * 2 - 1) * radius;
     const z = (rng() * 2 - 1) * radius;
     const density = forestRegionDensity(x, z, seed);
-    if (density < 0.45) continue;
+    if (density < 0.2) continue;
     const sample = sampleTerrainSurface(entry, x, z);
     if (!sample || !isGrassBiome(sample.heightNorm) || sample.y <= waterY + 0.5) continue;
     const score = density * sample.heightNorm;
@@ -763,6 +763,7 @@ async function buildTerrainForest() {
     templates,
     instancedMeshes: [],
     totalCount: result.count,
+    spawnTree: pickForestSpawnTree(result.chunkBins),
   };
 
   terrainForestSystem = system;
@@ -770,8 +771,6 @@ async function buildTerrainForest() {
 
   setStatus(`Building forest… ${result.count.toLocaleString()} trees`);
   await buildAllTerrainForestChunksAsync(system, generation);
-  _forestCamLast.set(Number.NaN, Number.NaN, Number.NaN);
-  updateForestChunkVisibility();
 }
 
 // ---------- Helpers ----------
@@ -1251,7 +1250,7 @@ async function loadCharacter() {
   character = { group, mixer, actions, height, state: 'idle', oneShot: null, currentAction: null, rollDir: new THREE.Vector3() };
   setGameplayState('idle');
 
-  const spawn = findForestSpawn(terrainEntry, FOREST_SEED);
+  const spawn = terrainForestSystem?.spawnTree ?? findForestSpawn(terrainEntry, FOREST_SEED);
   if (spawn) {
     group.position.set(spawn.x, spawn.y, spawn.z);
   } else {
@@ -1259,7 +1258,6 @@ async function loadCharacter() {
     if (h !== null) group.position.y = h;
   }
   frameCameraChar();
-  updateForestChunkVisibility();
 }
 
 // ---------- Init ----------
@@ -1291,7 +1289,6 @@ function loop() {
   skyAnimTime += delta;
   skyVisUniforms.time.value = skyAnimTime;
   skyVisual.position.copy(camera.position);
-  maybeUpdateForestChunkVisibility();
   if (character) {
     character.mixer.update(delta);
     updateGameplay(delta);
