@@ -32,6 +32,7 @@ canvas{display:block;}
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
 const EXCLUDED_CLIP = 'T-Pose (No Animation)';
@@ -51,13 +52,18 @@ const FOREST_SIZE_SCALE = TERRAIN_SIZE / FOREST_REF_SIZE;
 const FOREST_TREE_COUNT = 350000;
 const FOREST_SEED = 42;
 const TERRAIN_FOREST_GRASS_WEIGHT_MIN = 0.58;
-const TERRAIN_FOREST_SCALE_MIN = 0.06 * (HEIGHT_SCALE / 120);
-const TERRAIN_FOREST_SCALE_MAX = 0.12 * (HEIGHT_SCALE / 120);
+const TERRAIN_FOREST_HEIGHT_MIN = HEIGHT_SCALE * 0.0035;
+const TERRAIN_FOREST_HEIGHT_MAX = HEIGHT_SCALE * 0.009;
 const TERRAIN_FOREST_CHUNK_SIZE = 400 * FOREST_SIZE_SCALE;
+const TERRAIN_FOREST_VIEW_DISTANCE = 650 * FOREST_SIZE_SCALE;
+const TERRAIN_FOREST_VIEW_HYSTERESIS = 120 * FOREST_SIZE_SCALE;
 const TERRAIN_FOREST_PLACEMENT_BATCH_MS = 14;
 const TERRAIN_FOREST_BUILD_BATCH_MS = 12;
 const TERRAIN_FOREST_BARE_CUTOFF = 0.38;
-const PINE_PACK_URL = './trees_and_bush_pack_lowpoly.glb';
+const FOREST_TREE_MODELS = [
+  { url: './oak_tree.glb', name: 'oak' },
+  { url: './old_olive_tree.glb', name: 'olive' },
+];
 
 const loadingEl = document.getElementById('loading');
 
@@ -162,14 +168,16 @@ let terrainGroup = null;
 let terrainMesh = null;
 let terrainEntry = null;
 let terrainForestSystem = null;
-let pineTemplatesPromise = null;
+let forestTemplatesPromise = null;
 let forestDensityNoise = null;
 let terrainForestBuildGeneration = 0;
+let forestVisibilityTick = 0;
 
-const windUniforms = { uTime: { value: 0 } };
 const _dummy = new THREE.Object3D();
 const _v = new THREE.Vector3();
 const _box = new THREE.Box3();
+const _forestCamLocal = new THREE.Vector3();
+const _forestCamLast = new THREE.Vector3();
 
 // ---------- Terrain collision ----------
 
@@ -225,12 +233,6 @@ function mulberry32(seed) {
   };
 }
 
-function hasMesh(node) {
-  let found = false;
-  node.traverse((child) => { if (child.isMesh) found = true; });
-  return found;
-}
-
 function computeMeshBox(root, target = _box) {
   target.makeEmpty();
   root.updateWorldMatrix(true, true);
@@ -247,53 +249,64 @@ function computeMeshBox(root, target = _box) {
   return target;
 }
 
-function findLayoutRoot(root) {
-  let node = root;
-  while (node.children.length === 1 && !node.children[0].isMesh) {
-    node = node.children[0];
-  }
-  const instances = node.children.filter(hasMesh);
-  return instances.length >= 2 ? node : root;
+function isAlphaBlendMaterial(mat) {
+  if (mat.alphaMode === 'BLEND') return true;
+  if (mat.transparent && mat.opacity < 0.999 && mat.alphaTest < 0.01) return true;
+  const name = (mat.name || '').toLowerCase();
+  return /leaf|leaves|branch|foliage|projection/.test(name);
 }
 
-function configureMeshMaterials(mesh) {
-  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-  for (const mat of materials) {
-    if (!mat) continue;
-    mat.transparent = false;
+function configureForestMaterial(mat) {
+  if (!mat) return;
+  mat.side = THREE.DoubleSide;
+  if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+  if (mat.emissiveMap) mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+  if (isAlphaBlendMaterial(mat)) {
+    mat.transparent = true;
+    mat.depthWrite = false;
+    mat.alphaTest = 0;
+  } else if (mat.map) {
+    mat.transparent = true;
+    mat.alphaTest = 0.45;
     mat.depthWrite = true;
-    if (mat.map || mat.alphaMap) mat.alphaTest = 0.5;
-    mat.side = THREE.DoubleSide;
+  } else {
+    mat.transparent = false;
+    mat.alphaTest = 0;
+    mat.depthWrite = true;
   }
+}
+
+function cloneForestMaterial(source) {
+  if (Array.isArray(source)) {
+    return source.map((m) => {
+      const c = m.clone();
+      c.morphTargets = false;
+      c.morphNormals = false;
+      configureForestMaterial(c);
+      return c;
+    });
+  }
+  const c = source.clone();
+  c.morphTargets = false;
+  c.morphNormals = false;
+  configureForestMaterial(c);
+  return c;
 }
 
 function prepareMeshes(root) {
   root.traverse((child) => {
     if (!child.isMesh) return;
-    configureMeshMaterials(child);
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const mat of mats) configureForestMaterial(mat);
   });
 }
 
-function enableWindMaterial(material) {
-  if (material.userData.windEnabled) return;
-  material.userData.windEnabled = true;
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = windUniforms.uTime;
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <common>',
-      `#include <common>
-      uniform float uTime;`,
-    ).replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
-      float windH = max(transformed.y, 0.0);
-      float windPhase = uTime * 1.15 + transformed.x * 0.4 + transformed.z * 0.3;
-      transformed.x += sin(windPhase) * windH * 0.032;
-      transformed.z += cos(windPhase * 0.88) * windH * 0.026;`,
-    );
-  };
-  material.customProgramCacheKey = () => 'forest-wind-v1';
-  material.needsUpdate = true;
+function consolidateTemplateParts(parts) {
+  if (parts.length <= 1) return parts;
+  const merged = mergeGeometries(parts.map((p) => p.geometry), true);
+  if (!merged) return parts;
+  const materials = parts.map((p) => (Array.isArray(p.material) ? p.material : [p.material])).flat();
+  return [{ geometry: merged, material: materials.length === 1 ? materials[0] : materials }];
 }
 
 function bakeTreeTemplate(template) {
@@ -304,74 +317,44 @@ function bakeTreeTemplate(template) {
 
   const totalBox = computeMeshBox(template);
   const minY = Number.isFinite(totalBox.min.y) ? totalBox.min.y : 0;
+  const height = Math.max(totalBox.getSize(_v).y, 1e-6);
+  const norm = 1 / height;
 
   const parts = meshes.map((mesh) => {
     const geometry = mesh.geometry.clone();
     geometry.applyMatrix4(mesh.matrixWorld);
-    geometry.morphAttributes = {};
-    geometry.morphTargetsRelative = false;
-    geometry.translate(0, -minY, 0);
+    geometry.scale(norm, norm, norm);
+    geometry.translate(0, -minY * norm, 0);
+    geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
-
-    const mat = Array.isArray(mesh.material)
-      ? mesh.material.map((m) => {
-          const c = m.clone();
-          c.morphTargets = false;
-          c.morphNormals = false;
-          c.side = THREE.DoubleSide;
-          enableWindMaterial(c);
-          return c;
-        })
-      : (() => {
-          const c = mesh.material.clone();
-          c.morphTargets = false;
-          c.morphNormals = false;
-          c.side = THREE.DoubleSide;
-          enableWindMaterial(c);
-          return c;
-        })();
-
-    return { geometry, material: mat };
+    return { geometry, material: cloneForestMaterial(mesh.material) };
   });
 
-  return { name: template.name, parts };
+  return { name: template.name, parts: consolidateTemplateParts(parts), sourceHeight: height };
 }
 
-function repairMissingTrunks(root) {
-  const pine1 = root.getObjectByName('pine1');
-  const trunkSrc = root.getObjectByName('Pine2_Trunk_0');
-  if (!pine1 || !trunkSrc) return;
-  if (pine1.children.some((c) => c.isMesh && /trunk/i.test(c.name))) return;
-  const trunk = trunkSrc.clone(true);
-  trunk.name = 'pine1_Trunk_0';
-  trunk.position.set(0, 0, 0);
-  pine1.add(trunk);
+function extractTreeTemplate(gltf, name) {
+  const root = gltf.scene;
+  root.name = name;
+  root.updateWorldMatrix(true, true);
+  return bakeTreeTemplate(root);
 }
 
-function extractPineTemplates(gltf) {
-  repairMissingTrunks(gltf.scene);
-  const layout = findLayoutRoot(gltf.scene);
-  const templateNodes = layout.children
-    .filter(hasMesh)
-    .filter((node) => /^pine[12]$/i.test(node.name))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  if (!templateNodes.length) throw new Error('No pine1/pine2 templates found');
-  return templateNodes.map(bakeTreeTemplate);
-}
-
-async function loadPineTemplates() {
-  if (!pineTemplatesPromise) {
+async function loadForestTreeTemplates() {
+  if (!forestTemplatesPromise) {
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
     const loader = new GLTFLoader();
-    pineTemplatesPromise = new Promise((resolve, reject) => {
-      loader.load(PINE_PACK_URL, (gltf) => {
-        try { resolve(extractPineTemplates(gltf)); }
-        catch (err) { reject(err); }
-      }, undefined, reject);
-    });
+    forestTemplatesPromise = Promise.all(
+      FOREST_TREE_MODELS.map(({ url, name }) => new Promise((resolve, reject) => {
+        loader.load(url, (gltf) => {
+          try { resolve(extractTreeTemplate(gltf, name)); }
+          catch (err) { reject(err); }
+        }, undefined, reject);
+      })),
+    );
   }
-  return pineTemplatesPromise;
+  return forestTemplatesPromise;
 }
 
 function terrainSmoothstep(edge0, edge1, x) {
@@ -514,7 +497,8 @@ async function buildAllTerrainForestChunksAsync(system, generation) {
         const trees = system.chunkBins.get(key);
         const group = buildTerrainForestChunkGroup(trees, system.templates);
         prepareMeshes(group);
-        system.builtChunks.set(key, { key, trees, group });
+        group.visible = false;
+        system.builtChunks.set(key, { key, trees, group, visible: false });
         system.root.add(group);
         system.instancedMeshes.push(...group.userData.instancedMeshes);
         index++;
@@ -529,6 +513,47 @@ async function buildAllTerrainForestChunksAsync(system, generation) {
   });
 
   return generation === terrainForestBuildGeneration;
+}
+
+function terrainForestChunkCenter(key) {
+  const [cx, cz] = key.split(',').map(Number);
+  return {
+    x: (cx + 0.5) * TERRAIN_FOREST_CHUNK_SIZE,
+    z: (cz + 0.5) * TERRAIN_FOREST_CHUNK_SIZE,
+  };
+}
+
+function updateForestChunkVisibility() {
+  const system = terrainForestSystem;
+  if (!system?.builtChunks.size || !terrainGroup) return;
+
+  _forestCamLocal.copy(camera.position);
+  terrainGroup.worldToLocal(_forestCamLocal);
+
+  for (const chunk of system.builtChunks.values()) {
+    const center = terrainForestChunkCenter(chunk.key);
+    const dist = Math.hypot(_forestCamLocal.x - center.x, _forestCamLocal.z - center.z);
+    const limit = chunk.visible
+      ? TERRAIN_FOREST_VIEW_DISTANCE + TERRAIN_FOREST_VIEW_HYSTERESIS
+      : TERRAIN_FOREST_VIEW_DISTANCE;
+    const nextVisible = dist < limit;
+    if (nextVisible !== chunk.visible) {
+      chunk.visible = nextVisible;
+      chunk.group.visible = nextVisible;
+    }
+  }
+}
+
+function maybeUpdateForestChunkVisibility() {
+  if (!terrainForestSystem?.builtChunks.size) return;
+  forestVisibilityTick++;
+  if (forestVisibilityTick % 4 !== 0) return;
+
+  _forestCamLocal.copy(camera.position);
+  terrainGroup.worldToLocal(_forestCamLocal);
+  if (_forestCamLocal.distanceToSquared(_forestCamLast) < 2500 * FOREST_SIZE_SCALE) return;
+  _forestCamLast.copy(_forestCamLocal);
+  updateForestChunkVisibility();
 }
 
 function getForestDensityNoise(seed) {
@@ -589,7 +614,7 @@ function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef) {
     x,
     y: sample.y,
     z,
-    scale: THREE.MathUtils.lerp(TERRAIN_FOREST_SCALE_MIN, TERRAIN_FOREST_SCALE_MAX, cellRng()),
+    scale: THREE.MathUtils.lerp(TERRAIN_FOREST_HEIGHT_MIN, TERRAIN_FOREST_HEIGHT_MAX, cellRng()),
     spin: cellRng() * Math.PI * 2,
     type: Math.floor(cellRng() * 2),
   });
@@ -685,6 +710,28 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
   return { chunkBins, count: countRef.value };
 }
 
+function findForestSpawn(entry, seed) {
+  const waterY = entry.waterMesh?.position.y ?? 0;
+  const rng = mulberry32(seed + 54321);
+  let best = null;
+  let bestScore = -1;
+  const radius = TERRAIN_SIZE * 0.08;
+  for (let i = 0; i < 400; i++) {
+    const x = (rng() * 2 - 1) * radius;
+    const z = (rng() * 2 - 1) * radius;
+    const density = forestRegionDensity(x, z, seed);
+    if (density < 0.45) continue;
+    const sample = sampleTerrainSurface(entry, x, z);
+    if (!sample || !isGrassBiome(sample.heightNorm) || sample.y <= waterY + 0.5) continue;
+    const score = density * sample.heightNorm;
+    if (score > bestScore) {
+      bestScore = score;
+      best = { x, z, y: sample.y };
+    }
+  }
+  return best;
+}
+
 async function buildTerrainForest() {
   if (!terrainEntry) return;
 
@@ -697,7 +744,7 @@ async function buildTerrainForest() {
   }
 
   setStatus('Loading forest models…');
-  const templates = await loadPineTemplates();
+  const templates = await loadForestTreeTemplates();
   if (generation !== terrainForestBuildGeneration) return;
 
   setStatus('Generating forest…');
@@ -723,6 +770,8 @@ async function buildTerrainForest() {
 
   setStatus(`Building forest… ${result.count.toLocaleString()} trees`);
   await buildAllTerrainForestChunksAsync(system, generation);
+  _forestCamLast.set(Number.NaN, Number.NaN, Number.NaN);
+  updateForestChunkVisibility();
 }
 
 // ---------- Helpers ----------
@@ -1202,9 +1251,15 @@ async function loadCharacter() {
   character = { group, mixer, actions, height, state: 'idle', oneShot: null, currentAction: null, rollDir: new THREE.Vector3() };
   setGameplayState('idle');
 
-  const h = sampleTerrainHeight(group.position.x, group.position.z);
-  if (h !== null) group.position.y = h;
+  const spawn = findForestSpawn(terrainEntry, FOREST_SEED);
+  if (spawn) {
+    group.position.set(spawn.x, spawn.y, spawn.z);
+  } else {
+    const h = sampleTerrainHeight(group.position.x, group.position.z);
+    if (h !== null) group.position.y = h;
+  }
   frameCameraChar();
+  updateForestChunkVisibility();
 }
 
 // ---------- Init ----------
@@ -1236,9 +1291,7 @@ function loop() {
   skyAnimTime += delta;
   skyVisUniforms.time.value = skyAnimTime;
   skyVisual.position.copy(camera.position);
-  if (terrainForestSystem?.builtChunks.size) {
-    windUniforms.uTime.value = skyAnimTime;
-  }
+  maybeUpdateForestChunkVisibility();
   if (character) {
     character.mixer.update(delta);
     updateGameplay(delta);
