@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Demo</title>
+<title>Demo Game</title>
 <style>
 body{margin:0;overflow:hidden;background:#0e1117;}
 canvas{display:block;}
@@ -22,17 +22,16 @@ canvas{display:block;}
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
     "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.6/build/index.module.js"
   }
 }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 
 const EXCLUDED_CLIP = 'T-Pose (No Animation)';
@@ -41,8 +40,10 @@ const WALK_SPEED = 120;
 const ROLL_SPEED = 260;
 const ROTATION_LERP = 10;
 const TERRAIN_SIZE = 950000;
-const GRID_SIZE = TERRAIN_SIZE * 2;
-const FLOOR_BOUND = GRID_SIZE / 2 - 20;
+const GRID_SIZE = TERRAIN_SIZE;
+const HEIGHT_SCALE = 15000;
+const FLOOR_BOUND = TERRAIN_SIZE * 0.48 - 20;
+const SKY_SCALE = 10000;
 
 const loadingEl = document.getElementById('loading');
 
@@ -53,63 +54,100 @@ function setStatus(text, isError) {
 
 // ---------- Scene setup ----------
 
+const sunParams = {
+  elevation: 32, azimuth: 180, exposure: 0.13, turbidity: 10, rayleigh: 1,
+};
+const skySunDir = new THREE.Vector3();
+
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x444466);
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, TERRAIN_SIZE * 3);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+scene.background = null;
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 10, TERRAIN_SIZE * 4);
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = sunParams.exposure;
 document.body.prepend(renderer.domElement);
+
+const sceneEnv = new THREE.Scene();
+const sky = new Sky();
+sky.scale.setScalar(SKY_SCALE);
+sceneEnv.add(sky);
+const skyVisual = new Sky();
+skyVisual.scale.setScalar(SKY_SCALE);
+skyVisual.frustumCulled = false;
+skyVisual.renderOrder = -1000;
+skyVisual.material.depthTest = false;
+skyVisual.material.toneMapped = false;
+scene.add(skyVisual);
+const skyUniforms = sky.material.uniforms;
+const skyVisUniforms = skyVisual.material.uniforms;
+let skyRenderTarget;
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+
+function applySkyUniforms() {
+  skyUniforms.turbidity.value = sunParams.turbidity;
+  skyUniforms.rayleigh.value = sunParams.rayleigh;
+  skyVisUniforms.turbidity.value = sunParams.turbidity;
+  skyVisUniforms.rayleigh.value = sunParams.rayleigh;
+  renderer.toneMappingExposure = sunParams.exposure;
+}
+
+function updateSun() {
+  const phi = THREE.MathUtils.degToRad(90 - sunParams.elevation);
+  const theta = THREE.MathUtils.degToRad(sunParams.azimuth);
+  skySunDir.setFromSphericalCoords(1, phi, theta);
+  skyUniforms.sunPosition.value.copy(skySunDir);
+  skyVisUniforms.sunPosition.value.copy(skySunDir);
+  sun.position.copy(skySunDir).multiplyScalar(4000);
+  if (skyRenderTarget !== undefined) skyRenderTarget.dispose();
+  skyUniforms.mieCoefficient.value = 0.005;
+  skyUniforms.mieDirectionalG.value = 0.8;
+  skyVisUniforms.mieCoefficient.value = 0.005;
+  skyVisUniforms.mieDirectionalG.value = 0.8;
+  skyUniforms.showSunDisc.value = false;
+  skyRenderTarget = pmremGenerator.fromScene(sceneEnv);
+  scene.environment = skyRenderTarget.texture;
+  skyVisUniforms.showSunDisc.value = true;
+  applySkyUniforms();
+}
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.maxPolarAngle = Math.PI * 0.48;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 1;
+controls.maxDistance = TERRAIN_SIZE * 3;
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.45));
-
-const sun = new THREE.DirectionalLight(0xffffff, 1.1);
-sun.position.set(120, 220, 160);
-sun.castShadow = true;
-    sun.shadow.mapSize.set(16384, 16384);
-sun.shadow.camera.near = 1;
-sun.shadow.camera.far = TERRAIN_SIZE * 2;
-sun.shadow.camera.left = -FLOOR_BOUND;
-sun.shadow.camera.right = FLOOR_BOUND;
-sun.shadow.camera.top = FLOOR_BOUND;
-sun.shadow.camera.bottom = -FLOOR_BOUND;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xfff4e6, 1.8);
 scene.add(sun);
-
-const fill = new THREE.DirectionalLight(0x8899bb, 0.35);
-fill.position.set(-120, 140, -80);
+const fill = new THREE.DirectionalLight(0x8899cc, 0.35);
+fill.position.set(-100, 80, -60);
 scene.add(fill);
 
+updateSun();
 
 const clock = new THREE.Clock();
+let skyAnimTime = 0;
 const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
 let character = null;
+let terrainGroup = null;
 
 // ---------- Terrain collision ----------
 
-const terrainColliders = [];
 const _ray = new THREE.Raycaster();
 const _rayOrigin = new THREE.Vector3();
 const _rayDir = new THREE.Vector3(0, -1, 0);
-let _lastSampleX = 0, _lastSampleZ = 0;
-let _sampleFrameCount = 0;
-const SAMPLE_FRAME_INTERVAL = 4;
-const SAMPLE_MOVE_THRESHOLD_SQ = 1600;
 
 function sampleTerrainHeight(x, z) {
-  if (terrainColliders.length === 0) return null;
-  _rayOrigin.set(x, 100000, z);
+  if (!terrainGroup) return null;
+  _rayOrigin.set(x, HEIGHT_SCALE * 3, z);
   _ray.set(_rayOrigin, _rayDir);
-  _ray.far = 200000;
-  const hits = _ray.intersectObjects(terrainColliders, false);
+  _ray.far = HEIGHT_SCALE * 5;
+  const hits = _ray.intersectObjects(terrainGroup.children, false);
   if (hits.length > 0) return hits[0].point.y;
-  return null;
+  return HEIGHT_SCALE * 0.1;
 }
 
 // ---------- Helpers ----------
@@ -173,10 +211,6 @@ function triggerRoll() {
   triggerOneShot('roll');
 }
 
-function isMoving() {
-  return keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
-}
-
 // ---------- Movement ----------
 
 const _forward = new THREE.Vector3();
@@ -224,14 +258,32 @@ function updateGameplay(delta) {
   faceDirection(_dir, delta);
 }
 
+function isMoving() {
+  return keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
+}
+
 // ---------- Camera ----------
+
+function frameCameraChar() {
+  const h = character.height;
+  const pos = character.group.position;
+  controls.target.set(pos.x, pos.y + h * 0.5, pos.z);
+  camera.position.set(pos.x, pos.y + h * 1.5, pos.z - h * 3);
+  controls.minDistance = Math.max(5, h * 0.8);
+  controls.maxDistance = TERRAIN_SIZE * 3;
+  camera.near = Math.max(0.1, h * 0.1);
+  camera.far = TERRAIN_SIZE * 3;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
 
 function followCamera() {
   const pos = character.group.position;
-  const targetY = character.height * 0.4;
-  controls.target.set(pos.x, pos.y + targetY, pos.z);
-  controls.minDistance = 5;
-  controls.maxDistance = TERRAIN_SIZE * 2;
+  const target = new THREE.Vector3(pos.x, pos.y + character.height * 0.5, pos.z);
+  const delta = target.clone().sub(controls.target);
+  if (delta.lengthSq() < 1e-10) return;
+  camera.position.add(delta);
+  controls.target.add(delta);
   controls.update();
 }
 
@@ -255,169 +307,191 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-// ---------- Loading ----------
+// ---------- Terrain (JPG heightmap) ----------
 
-const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/libs/draco/gltf/');
-const loader = new GLTFLoader();
-loader.setDRACOLoader(dracoLoader);
+async function loadTerrain() {
+  setStatus('Loading terrain…');
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error('Failed to load heightmap image'));
+    img.src = './n40_w090_1arc_v3.jpg';
+  });
 
-const TEXTURE_SETS = {
-  ground033: {
-    paths: {
-      map: './Ground033_1K-JPG_Color.jpg',
-      normalMap: './Ground033_1K-JPG_NormalGL.jpg',
-      displacementMap: './Ground033_1K-JPG_Displacement.jpg',
-      roughnessMap: './Ground033_1K-JPG_Roughness.jpg',
-      aoMap: './Ground033_1K-JPG_AmbientOcclusion.jpg',
-    },
-  },
-};
+  const cv = document.createElement('canvas');
+  const sampleSize = Math.min(img.width, img.height, 2048);
+  cv.width = sampleSize;
+  cv.height = sampleSize;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(img, 0, 0, sampleSize, sampleSize);
+  const { data } = ctx.getImageData(0, 0, sampleSize, sampleSize);
 
-const assetList = [
-  { name: 'cac-1783902065521.glb', loaded: 0, total: 0, done: false, phase: 'waiting' },
-  { name: 'heightmap1.glb', loaded: 0, total: 0, done: false, phase: 'waiting' },
-];
+  const segments = Math.min(sampleSize - 1, 511);
+  const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, segments, segments);
+  geometry.rotateX(-Math.PI / 2);
 
-function renderStatus() {
-  const lines = assetList.map(a =>
-    a.done ? a.name + ' 100%' : a.phase
-  );
-  loadingEl.innerHTML = lines.join('<br>');
-  if (assetList.every(a => a.done)) loadingEl.classList.add('hidden');
+  const uv = geometry.attributes.uv;
+  const pos = geometry.attributes.position;
+  let minH = Infinity, maxH = -Infinity;
+  const heights = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const px = Math.min(Math.floor(uv.getX(i) * sampleSize), sampleSize - 1);
+    const py = Math.min(Math.floor((1 - uv.getY(i)) * sampleSize), sampleSize - 1);
+    const idx = (py * sampleSize + px) * 4;
+    const h = (data[idx] * 65536 + data[idx + 1] * 256 + data[idx + 2]) / 65535;
+    heights[i] = h;
+    if (h < minH) minH = h;
+    if (h > maxH) maxH = h;
+  }
+  const range = maxH - minH || 1;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, ((heights[i] - minH) / range) * HEIGHT_SCALE);
+  }
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+
+  const cSand = new THREE.Color(0xd4b48c);
+  const cGrass = new THREE.Color(0x5a8c4a);
+  const cStone = new THREE.Color(0x8a8a8a);
+  const cSnow = new THREE.Color(0xececec);
+  const colors = new Float32Array(pos.count * 3);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const t = (heights[i] - minH) / range;
+    if (t < 0.3) tmp.copy(cSand).lerp(cGrass, t / 0.3);
+    else if (t < 0.65) tmp.copy(cGrass).lerp(cStone, (t - 0.3) / 0.35);
+    else tmp.copy(cStone).lerp(cSnow, (t - 0.65) / 0.35);
+    colors[i * 3] = tmp.r;
+    colors[i * 3 + 1] = tmp.g;
+    colors[i * 3 + 2] = tmp.b;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.raycast = acceleratedRaycast;
+  geometry.computeBoundsTree = computeBoundsTree;
+  geometry.disposeBoundsTree = disposeBoundsTree;
+  geometry.computeBoundsTree();
+  const box = new THREE.Box3().setFromObject(mesh);
+  const center = box.getCenter(new THREE.Vector3());
+  mesh.position.x -= center.x;
+  mesh.position.z -= center.z;
+  mesh.position.y -= box.min.y;
+
+  const waterMat = new THREE.MeshPhysicalMaterial({
+    color: 0x3a7bd5, transparent: true, opacity: 0.4,
+    roughness: 0.1, metalness: 0.05, side: THREE.DoubleSide,
+  });
+  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE), waterMat);
+  waterMesh.rotation.x = -Math.PI / 2;
+  waterMesh.position.y = HEIGHT_SCALE * 0.2;
+  waterMesh.renderOrder = 1;
+
+  const group = new THREE.Group();
+  group.add(mesh);
+  group.add(waterMesh);
+  scene.add(group);
+  terrainGroup = group;
 }
-renderStatus();
 
-async function loadAll() {
+// ---------- Character loading ----------
+
+async function loadCharacter() {
+  setStatus('Loading character…');
+  const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+  const { DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js');
+  const draco = new DRACOLoader();
+  draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/libs/draco/gltf/');
+  const loader = new GLTFLoader();
+  loader.setDRACOLoader(draco);
+
+  const gltf = await new Promise((r, j) => loader.load('./cac-1783902065521.glb', r, undefined, j));
+  const root = gltf.scene;
+  root.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+
+  const group = new THREE.Group();
+  group.add(root);
+  const { height } = centerModel(root);
+  scene.add(group);
+
+  const clips = gltf.animations.filter((c) => c.name !== EXCLUDED_CLIP);
+  const mixer = new THREE.AnimationMixer(root);
+  const byName = Object.fromEntries(clips.map((c) => [c.name, c]));
+
+  // Height-based clip config matching test-engine-index
+  const CLIPS = { idle: 'InjuredIdle', walk: 'CrouchedWalking', jump: 'Jump', roll: 'SprintingForwardRoll' };
+  const actions = {
+    idle: mixer.clipAction(byName[CLIPS.idle]),
+    walk: mixer.clipAction(inPlaceClip(byName[CLIPS.walk])),
+    roll: mixer.clipAction(inPlaceClip(byName[CLIPS.roll])),
+    jump: mixer.clipAction(byName[CLIPS.jump]),
+  };
+  for (const name of ['jump', 'roll']) {
+    actions[name].setLoop(THREE.LoopOnce, 1);
+    actions[name].clampWhenFinished = true;
+  }
+
+  mixer.addEventListener('finished', () => {
+    character.oneShot = null;
+    setGameplayState(isMoving() ? 'walk' : 'idle');
+  });
+
+  character = { group, mixer, actions, height, state: 'idle', oneShot: null, currentAction: null, rollDir: new THREE.Vector3() };
+  setGameplayState('idle');
+
+  const h = sampleTerrainHeight(group.position.x, group.position.z);
+  if (h !== null) group.position.y = h;
+  frameCameraChar();
+}
+
+// ---------- Init ----------
+
+let _lastSampleX = 0, _lastSampleZ = 0;
+const SAMPLE_FRAME_INTERVAL = 4;
+const SAMPLE_MOVE_THRESHOLD_SQ = 1600;
+let sampleFrameCount = 0;
+
+async function init() {
   try {
-    // character first — warms Draco decoder
-    assetList[0].phase = 'decoding…';
-    renderStatus();
-    const gltf = await new Promise((r, j) => loader.load('./cac-1783902065521.glb', r, undefined, j));
-    assetList[0].done = true;
-    assetList[0].phase = '100%';
-    renderStatus();
-    const root = gltf.scene;
-    root.traverse((child) => {
-      if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
-    });
-    const group = new THREE.Group();
-    group.add(root);
-    const { height } = centerModel(root);
-    group.position.set(0, 1, 2);
-    scene.add(group);
-
-    const clips = gltf.animations.filter((c) => c.name !== EXCLUDED_CLIP);
-    const mixer = new THREE.AnimationMixer(root);
-    const byName = Object.fromEntries(clips.map((c) => [c.name, c]));
-    const actions = {
-      idle: mixer.clipAction(byName.InjuredIdle),
-      walk: mixer.clipAction(inPlaceClip(byName.CrouchedWalking)),
-      roll: mixer.clipAction(inPlaceClip(byName.SprintingForwardRoll)),
-      jump: mixer.clipAction(byName.Jump),
-    };
-    for (const name of ['jump', 'roll']) {
-      actions[name].setLoop(THREE.LoopOnce, 1);
-      actions[name].clampWhenFinished = true;
-    }
-
-    mixer.addEventListener('finished', () => {
-      character.oneShot = null;
-      setGameplayState(isMoving() ? 'walk' : 'idle');
-    });
-
-    character = { group, mixer, actions, height, state: 'idle', oneShot: null, currentAction: null, rollDir: new THREE.Vector3() };
-    setGameplayState('idle');
-    camera.position.set(0, height * 2, height * 5);
-    followCamera();
-    controls.update();
-
-    // heightmap
-    assetList[1].phase = 'decoding…';
-    renderStatus();
-    const hDraco = new DRACOLoader();
-    hDraco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/libs/draco/gltf/');
-    const hLoader = new GLTFLoader();
-    hLoader.setDRACOLoader(hDraco);
-    const hmap = await new Promise((r, j) => hLoader.load('./heightmap1.glb', r, undefined, j));
-    assetList[1].done = true;
-    assetList[1].phase = '100%';
-    renderStatus();
-    const hRoot = hmap.scene;
-
-    const texLoader = new THREE.TextureLoader();
-    const texPaths = TEXTURE_SETS.ground033.paths;
-    const [map, normalMap, displacementMap, roughnessMap, aoMap] = await Promise.all([
-      texLoader.loadAsync(texPaths.map),
-      texLoader.loadAsync(texPaths.normalMap),
-      texLoader.loadAsync(texPaths.displacementMap),
-      texLoader.loadAsync(texPaths.roughnessMap),
-      texLoader.loadAsync(texPaths.aoMap),
-    ]);
-    map.colorSpace = THREE.SRGBColorSpace;
-    for (const t of [map, normalMap, displacementMap, roughnessMap, aoMap]) {
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.repeat.set(256, 256);
-    }
-
-    hRoot.traverse((child) => {
-      if (!child.isMesh || !child.geometry) return;
-      const geo = child.geometry;
-      const mat = child.material;
-      if (!geo.attributes.uv2) geo.setAttribute('uv2', geo.attributes.uv.clone());
-      // add ground033 textures on top of the original material to preserve baked shadows
-      mat.map = map;
-      mat.normalMap = normalMap;
-      mat.roughnessMap = roughnessMap;
-      mat.aoMap = aoMap;
-      mat.roughness = 0.8;
-      mat.metalness = 0;
-      mat.needsUpdate = true;
-      child.receiveShadow = true;
-      child.raycast = acceleratedRaycast;
-      child.geometry.computeBoundsTree = computeBoundsTree;
-      child.geometry.disposeBoundsTree = disposeBoundsTree;
-      child.geometry.computeBoundsTree();
-      terrainColliders.push(child);
-    });
-    const hBox = new THREE.Box3().setFromObject(hRoot);
-    const hSize = hBox.getSize(new THREE.Vector3());
-    const s = TERRAIN_SIZE / Math.max(hSize.x, hSize.z);
-    hRoot.scale.set(s, s, s);
-    hRoot.position.set(
-      -(hBox.min.x + hBox.max.x) * 0.5 * s,
-      -hBox.min.y * s,
-      -(hBox.min.z + hBox.max.z) * 0.5 * s
-    );
-    hRoot.updateWorldMatrix(true, true);
-    scene.add(hRoot);
-    const h = sampleTerrainHeight(character.group.position.x, character.group.position.z);
-    if (h !== null) character.group.position.y = h;
-    renderStatus();
+    await loadTerrain();
+    await loadCharacter();
+    setStatus('');
+    loadingEl.classList.add('hidden');
   } catch (err) {
     console.error(err);
     setStatus('Failed: ' + err.message, true);
   }
 }
-loadAll();
+init();
 
 // ---------- Render loop ----------
 
 function loop() {
   requestAnimationFrame(loop);
-  if (!character) { renderer.render(scene, camera); return; }
   const delta = Math.min(clock.getDelta(), 0.05);
-  character.mixer.update(delta);
-  updateGameplay(delta);
-  _sampleFrameCount++;
-  const pos = character.group.position;
-  const dx = pos.x - _lastSampleX;
-  const dz = pos.z - _lastSampleZ;
-  if ((_sampleFrameCount & (SAMPLE_FRAME_INTERVAL - 1)) === 0 || dx * dx + dz * dz > SAMPLE_MOVE_THRESHOLD_SQ) {
-    const h = sampleTerrainHeight(pos.x, pos.z);
-    if (h !== null) { pos.y = h; _lastSampleX = pos.x; _lastSampleZ = pos.z; }
+  skyAnimTime += delta;
+  skyVisUniforms.time.value = skyAnimTime;
+  skyVisual.position.copy(camera.position);
+  if (character) {
+    character.mixer.update(delta);
+    updateGameplay(delta);
+    const pos = character.group.position;
+    const dx = pos.x - _lastSampleX;
+    const dz = pos.z - _lastSampleZ;
+    sampleFrameCount++;
+    if ((sampleFrameCount & (SAMPLE_FRAME_INTERVAL - 1)) === 0 || dx * dx + dz * dz > SAMPLE_MOVE_THRESHOLD_SQ) {
+      const h = sampleTerrainHeight(pos.x, pos.z);
+      if (h !== null) { pos.y = h; _lastSampleX = pos.x; _lastSampleZ = pos.z; }
+    }
+    followCamera();
   }
-  followCamera();
   renderer.render(scene, camera);
 }
 loop();

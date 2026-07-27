@@ -3,13 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Model Viewer</title>
+<title>Demo Engine</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{width:100%;height:100%;overflow:hidden;background:#0e1117;}
 canvas{display:block;width:100%;height:100%;}
 canvas.grab{cursor:grab;}
 canvas.grabbing{cursor:grabbing;}
+#loading-screen{
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:#0e1117;z-index:100;transition:opacity .4s;
+}
+#loading-screen.hidden{opacity:0;pointer-events:none;}
+#loading-panel{min-width:320px;}
+#loading-title{font:600 14px/1.5 system-ui,sans-serif;color:rgba(255,255,255,0.6);margin-bottom:16px;letter-spacing:0.03em;text-transform:uppercase;}
+#loading-items{display:flex;flex-direction:column;gap:6px;}
+.loading-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;}
+.loading-name{font:500 12px/1.4 system-ui,sans-serif;color:rgba(255,255,255,0.7);}
+.loading-status{font:600 11px/1.4 ui-monospace,monospace;color:rgba(255,255,255,0.35);}
+.loading-status.loading{color:#64b5f6;}
+.loading-status.complete{color:#4ade80;}
+.loading-status.error{color:#f87171;}
 #status{
   position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
   background:#0e1117;color:rgba(255,255,255,0.45);font:14px/1.5 system-ui,sans-serif;
@@ -40,46 +54,73 @@ canvas.grabbing{cursor:grabbing;}
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.14);
 }
 
-#forest-controls, #terrain-controls{
+#forest-controls, #terrain-controls, #skybox-controls{
   position:fixed;top:72px;right:16px;z-index:10;
   display:flex;flex-direction:column;gap:12px;
-  min-width:200px;padding:14px 16px;border-radius:14px;
+  min-width:200px;padding:14px 16px;border-radius:14px;max-height:calc(100vh - 90px);overflow-y:auto;
   background:rgba(255,255,255,0.06);
   backdrop-filter:blur(16px) saturate(150%);
   -webkit-backdrop-filter:blur(16px) saturate(150%);
   border:1px solid rgba(255,255,255,0.12);
   box-shadow:0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
 }
-#forest-controls.hidden, #terrain-controls.hidden{display:none;}
-#forest-controls h2, #terrain-controls h2{
+#terrain-controls .section{margin-bottom:6px;}
+#terrain-controls .section-title{
+  font:600 12px/1 system-ui,sans-serif;letter-spacing:0.04em;
+  color:rgba(255,255,255,0.45);cursor:pointer;user-select:none;padding:6px 0;
+  display:flex;justify-content:space-between;align-items:center;
+}
+#terrain-controls .section-title:hover{color:rgba(255,255,255,0.7);}
+#terrain-controls .slider-row{margin-bottom:10px;}
+#terrain-controls .slider-row label{display:flex;justify-content:space-between;align-items:center;flex-direction:row;font:500 12px/1 system-ui,sans-serif;color:rgba(255,255,255,0.7);margin-bottom:4px;}
+#terrain-controls .slider-row output{font:600 12px/1 ui-monospace,monospace;color:rgba(255,255,255,0.9);}
+#terrain-controls .slider-row input[type=range]{width:100%;height:4px;appearance:none;border-radius:999px;background:rgba(255,255,255,0.14);outline:none;cursor:pointer;}
+#terrain-controls .slider-row input[type=range]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid rgba(255,255,255,0.35);box-shadow:0 2px 8px rgba(0,0,0,0.35);}
+#terrain-controls .slider-row input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid rgba(255,255,255,0.35);box-shadow:0 2px 8px rgba(0,0,0,0.35);}
+#terrain-controls .toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+#terrain-controls .toggle-row label{font:500 12px/1 system-ui,sans-serif;color:rgba(255,255,255,0.7);flex:1;}
+#terrain-controls .toggle-row input[type=checkbox]{accent-color:#64b5f6;}
+#forest-controls.hidden, #terrain-controls.hidden, #skybox-controls.hidden{display:none;}
+#forest-controls h2, #terrain-controls h2, #skybox-controls h2{
   font:600 12px/1 system-ui,sans-serif;
   letter-spacing:0.04em;text-transform:uppercase;
   color:rgba(255,255,255,0.45);
 }
-#forest-controls label, #terrain-controls label{
+#forest-controls label, #terrain-controls label, #skybox-controls label{
   display:flex;flex-direction:column;gap:6px;
   font:500 12px/1 system-ui,sans-serif;color:rgba(255,255,255,0.7);
 }
-#forest-controls label span, #terrain-controls label span{
+#forest-controls label span, #terrain-controls label span, #skybox-controls label span{
   display:flex;justify-content:space-between;align-items:center;
 }
-#forest-controls output, #terrain-controls output{
+#forest-controls output, #terrain-controls output, #skybox-controls output{
   font:600 12px/1 ui-monospace,monospace;color:rgba(255,255,255,0.9);
 }
-#forest-controls input[type=range], #terrain-controls input[type=range]{
+#forest-controls input[type=range], #terrain-controls input[type=range], #skybox-controls input[type=range]{
   width:100%;height:4px;appearance:none;border-radius:999px;
   background:rgba(255,255,255,0.14);outline:none;cursor:pointer;
 }
-#forest-controls input[type=range]::-webkit-slider-thumb, #terrain-controls input[type=range]::-webkit-slider-thumb{
+#forest-controls input[type=range]::-webkit-slider-thumb, #terrain-controls input[type=range]::-webkit-slider-thumb, #skybox-controls input[type=range]::-webkit-slider-thumb{
   appearance:none;width:14px;height:14px;border-radius:50%;
   background:#fff;border:2px solid rgba(255,255,255,0.35);
   box-shadow:0 2px 8px rgba(0,0,0,0.35);
 }
-#forest-controls input[type=range]::-moz-range-thumb, #terrain-controls input[type=range]::-moz-range-thumb{
+#forest-controls input[type=range]::-moz-range-thumb, #terrain-controls input[type=range]::-moz-range-thumb, #skybox-controls input[type=range]::-moz-range-thumb{
   width:14px;height:14px;border-radius:50%;
   background:#fff;border:2px solid rgba(255,255,255,0.35);
   box-shadow:0 2px 8px rgba(0,0,0,0.35);
 }
+#foliage-types{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+#foliage-types h2{margin-bottom:2px;}
+.foliage-type{display:flex;flex-direction:row!important;align-items:center;gap:8px;cursor:pointer;}
+.foliage-type input[type=checkbox]{display:none;}
+.foliage-type .cb-visual{width:14px;height:14px;border-radius:3px;border:1.5px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;}
+.foliage-type .cb-visual .check{display:none;font-size:11px;color:rgba(255,255,255,0.85);line-height:1;}
+.foliage-type input:checked+.cb-visual{border-color:rgba(255,255,255,0.85);}
+.foliage-type input:checked+.cb-visual .check{display:inline;}
+.foliage-source-title{font:600 11px/1 system-ui,sans-serif;color:rgba(255,255,255,0.5);margin-top:6px;margin-bottom:4px;letter-spacing:0.03em;text-transform:uppercase;}
+.foliage-type input[type=checkbox]:focus-visible{outline:1px solid rgba(255,255,255,0.5);outline-offset:2px;}
+.foliage-type span{font:500 11px/1 system-ui,sans-serif;color:rgba(255,255,255,0.7);white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -95,42 +136,156 @@ canvas.grabbing{cursor:grabbing;}
     <span>Density <output id="forest-density-val">70</output></span>
     <input type="range" id="forest-density" min="0" max="100" value="70">
   </label>
-  <h2>Rotation</h2>
-  <label>
-    <span>Rot X min ° <output id="forest-rotx-min-val">0</output></span>
-    <input type="range" id="forest-rotx-min" min="0" max="360" value="0">
-  </label>
-  <label>
-    <span>Rot X max ° <output id="forest-rotx-max-val">360</output></span>
-    <input type="range" id="forest-rotx-max" min="0" max="360" value="360">
-  </label>
+  <div id="foliage-types"></div>
 </div>
 <div id="terrain-controls" class="hidden">
-  <h2>Terrain</h2>
-  <label>
-    <span>Height Scale <output id="terrain-height-val">120</output></span>
+  <div class="slider-row">
+    <label>Height Scale <output id="terrain-height-val">120</output></label>
     <input type="range" id="terrain-height" min="1" max="500" value="120">
-  </label>
-  <label>
-    <span>Roughness <output id="terrain-roughness-val">85</output></span>
+  </div>
+  <div class="slider-row">
+    <label>Roughness <output id="terrain-roughness-val">85</output></label>
     <input type="range" id="terrain-roughness" min="0" max="100" value="85">
-  </label>
-  <h2>Water</h2>
-  <label>
-    <span>Level <output id="terrain-water-level-val">20</output></span>
+  </div>
+  <div class="slider-row">
+    <label>Height Redistribution <output id="heightRedistVal">1.00</output></label>
+    <input type="range" id="heightRedist" min="30" max="300" value="100" step="5">
+  </div>
+
+  <div class="slider-row">
+    <label>Octaves <output id="noiseOctavesVal">4</output></label>
+    <input type="range" id="noiseOctaves" min="1" max="8" value="4" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Lacunarity <output id="noiseLacunarityVal">2.0</output></label>
+    <input type="range" id="noiseLacunarity" min="10" max="40" value="20" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Persistence <output id="noisePersistenceVal">0.50</output></label>
+    <input type="range" id="noisePersistence" min="10" max="90" value="50" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Seed <output id="noiseSeedVal">0</output></label>
+    <input type="range" id="noiseSeed" min="0" max="9999" value="0" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Height <output id="hillHeightVal">100%</output></label>
+    <input type="range" id="hillHeight" min="0" max="200" value="100" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Scale <output id="hillSpacingVal">100</output></label>
+    <input type="range" id="hillSpacing" min="5" max="500" value="100" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Rolling Hills <output id="hillRollingVal">100%</output></label>
+    <input type="range" id="hillRolling" min="0" max="200" value="100" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Large Dunes <output id="hillDunesVal">100%</output></label>
+    <input type="range" id="hillDunes" min="0" max="200" value="100" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Fine Detail <output id="hillDetailVal">100%</output></label>
+    <input type="range" id="hillDetail" min="0" max="200" value="100" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Micro Displacement <output id="hillDisplacementVal">0.50</output></label>
+    <input type="range" id="hillDisplacement" min="0" max="50" value="5" step="1">
+  </div>
+  <div class="slider-row">
+    <label>X-Step <output id="freqXVal">1.00</output></label>
+    <input type="range" id="freqX" min="10" max="500" value="100" step="5">
+  </div>
+  <div class="slider-row">
+    <label>Z-Step <output id="freqZVal">1.00</output></label>
+    <input type="range" id="freqZ" min="10" max="500" value="100" step="5">
+  </div>
+  <div class="slider-row">
+    <label>Domain Warp <output id="warpStrengthVal">0</output></label>
+    <input type="range" id="warpStrength" min="0" max="100" value="0" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Crust Factor <output id="crustFactorVal">0.0</output></label>
+    <input type="range" id="crustFactor" min="0" max="200" value="0" step="5">
+  </div>
+  <div class="slider-row">
+    <label>Tectonic Factor <output id="tectonicFactorVal">0.0</output></label>
+    <input type="range" id="tectonicFactor" min="0" max="60" value="0" step="1">
+  </div>
+  <div class="slider-row">
+    <label>MB Radius <output id="mbRadiusVal">40</output></label>
+    <input type="range" id="mbRadius" min="10" max="90" value="40" step="1">
+  </div>
+  <div class="slider-row">
+    <label>MB Width <output id="mbWidthVal">15</output></label>
+    <input type="range" id="mbWidth" min="5" max="40" value="15" step="1">
+  </div>
+  <div class="slider-row">
+    <label>MB Height <output id="mbHeightVal">1.00</output></label>
+    <input type="range" id="mbHeight" min="0" max="300" value="100" step="1">
+  </div>
+  <div class="slider-row">
+    <label>MB Irregularity <output id="mbIrregularityVal">0.30</output></label>
+    <input type="range" id="mbIrregularity" min="0" max="100" value="30" step="1">
+  </div>
+  <div class="slider-row">
+    <label>Water Level <output id="terrain-water-level-val">20</output></label>
     <input type="range" id="terrain-water-level" min="0" max="100" value="20">
+  </div>
+  <div class="slider-row">
+    <label>Water Opacity <output id="terrain-water-opacity-val">40</output></label>
+    <input type="range" id="terrain-water-opacity" min="0" max="100" value="40">
+  </div>
+  <div class="slider-row">
+    <label>Water Border <output id="waterBorderVal">0</output></label>
+    <input type="range" id="waterBorder" min="0" max="100" value="0" step="1">
+  </div>
+  <div class="slider-row">
+    <label>River Strength <output id="riverStrengthVal">0</output></label>
+    <input type="range" id="riverStrength" min="0" max="100" value="0" step="1">
+  </div>
+</div>
+<div id="skybox-controls" class="hidden">
+  <h2>Sun</h2>
+  <label>
+    <span>Elevation <output id="sun-elevation-val">32</output></span>
+    <input type="range" id="sun-elevation" min="0" max="90" value="32" step="0.5">
   </label>
   <label>
-    <span>Opacity <output id="terrain-water-opacity-val">40</output></span>
-    <input type="range" id="terrain-water-opacity" min="0" max="100" value="40">
+    <span>Azimuth <output id="sun-azimuth-val">180</output></span>
+    <input type="range" id="sun-azimuth" min="-180" max="180" value="180" step="1">
+  </label>
+  <label>
+    <span>Exposure <output id="sun-exposure-val">0.13</output></span>
+    <input type="range" id="sun-exposure" min="0" max="1" value="0.13" step="0.01">
+  </label>
+  <label>
+    <span>Turbidity <output id="sun-turbidity-val">10.0</output></span>
+    <input type="range" id="sun-turbidity" min="0" max="20" value="10" step="0.1">
+  </label>
+  <h2>Sky</h2>
+  <label>
+    <span>Rayleigh <output id="sky-rayleigh-val">1.0</output></span>
+    <input type="range" id="sky-rayleigh" min="0" max="4" value="1" step="0.1">
+  </label>
+  <h2>Animation</h2>
+  <label>
+    <span>Speed <output id="speed-val">1.0</output></span>
+    <input type="range" id="speed" min="0" max="3" step="0.05" value="1.0">
   </label>
 </div>
-<div id="status">Loading…</div>
+<div id="loading-screen">
+  <div id="loading-panel">
+    <div id="loading-title">Loading Assets…</div>
+    <div id="loading-items"></div>
+  </div>
+</div>
+<div id="status" class="hidden"></div>
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
   }
 }
 </script>
@@ -139,30 +294,35 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 
-let GRID_SIZE = 800;
+const BASE_GRID_SIZE = 8000;
+let GRID_SIZE = BASE_GRID_SIZE;
 const GRID_DIVISIONS = 40;
 
 const MODELS = [
-  { id: 'snow', label: 'Snow Trees', url: './snow_trees_pack_lowpoly.glb' },
-  {
-    id: 'autumn',
-    label: 'Autumn Trees',
-    url: './stylized_aumtumn_trees_pack_animation_baked.glb',
-    forest: { count: 500, density: 70, seed: 42, rotXMin: 0, rotXMax: 360 },
-  },
-  { id: 'trees', label: 'Trees & Bushes', url: './trees_and_bush_pack_lowpoly.glb' },
-  { id: 'heightmap', label: 'Heightmap', url: './heightmap1.glb' },
   {
     id: 'char2',
-    label: 'Character 2',
+    label: 'Character',
     url: './cac-1783902065521.glb',
     character: {
       mode: 'gameplay',
       clips: { idle: 'InjuredIdle', walk: 'CrouchedWalking', jump: 'Jump', roll: 'SprintingForwardRoll' },
     },
   },
-  { id: 'terrain', label: 'Terrain (JPG)', type: 'heightmap-image', url: './n40_w090_1arc_v3.jpg' },
+  {
+    id: 'foliage',
+    label: 'Foliage',
+    foliage: {
+      models: [
+        { url: './stylized_aumtumn_trees_pack_animation_baked.glb', label: 'Autumn Trees' },
+        { url: './trees_and_bush_pack_lowpoly.glb', label: 'Trees & Bushes' },
+      ],
+      forest: { count: 500, density: 70, seed: 42 },
+    },
+  },
+  { id: 'terrain', label: 'Terrain', type: 'heightmap-image', url: './n40_w090_1arc_v3.jpg' },
+  { id: 'skybox', label: 'Skybox', type: 'skybox' },
 ];
 
 const canvas = document.getElementById('c');
@@ -171,12 +331,8 @@ const tabsEl = document.getElementById('tabs');
 const forestControlsEl = document.getElementById('forest-controls');
 const forestCountInput = document.getElementById('forest-count');
 const forestDensityInput = document.getElementById('forest-density');
-const forestRotXMinInput = document.getElementById('forest-rotx-min');
-const forestRotXMaxInput = document.getElementById('forest-rotx-max');
 const forestCountVal = document.getElementById('forest-count-val');
 const forestDensityVal = document.getElementById('forest-density-val');
-const forestRotXMinVal = document.getElementById('forest-rotx-min-val');
-const forestRotXMaxVal = document.getElementById('forest-rotx-max-val');
 const terrainControlsEl = document.getElementById('terrain-controls');
 const terrainHeightInput = document.getElementById('terrain-height');
 const terrainRoughnessInput = document.getElementById('terrain-roughness');
@@ -187,7 +343,7 @@ const terrainRoughnessVal = document.getElementById('terrain-roughness-val');
 const terrainWaterLevelVal = document.getElementById('terrain-water-level-val');
 const terrainWaterOpacityVal = document.getElementById('terrain-water-opacity-val');
 
-let autumnEntry = null;
+let foliageEntry = null;
 let forestRebuildTimer = 0;
 let terrainEntry = null;
 
@@ -198,20 +354,126 @@ const WALK_SPEED = 120;
 const ROLL_SPEED = 260;
 const ROTATION_LERP = 10;
 const FLOOR_BOUND = 780;
-const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+let animSpeed = 1.0;
+let skyAnimTime = 0;
 
 const windUniforms = { uTime: { value: 0 } };
 const _dummy = new THREE.Object3D();
 
+// ---------- Terrain noise ----------
+class PerlinNoise {
+  constructor(seed = 0) { this.perm = new Array(512); this.setSeed(seed); }
+  setSeed(seed) {
+    const p = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+    let s = seed >>> 0;
+    for (let i = 255; i > 0; i--) { s = (s * 1103515245 + 12345) & 0x7fffffff; const j = s % (i + 1); [p[i], p[j]] = [p[j], p[i]]; }
+    for (let i = 0; i < 256; i++) this.perm[i] = this.perm[i + 256] = p[i];
+  }
+  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  lerp(t, a, b) { return a + t * (b - a); }
+  grad(hash, x, y) { const h = hash & 7; if (h < 4) return ((h & 1) === 0 ? x : -x) + ((h & 2) === 0 ? y : -y); return h === 4 ? x : h === 5 ? -x : h === 6 ? y : -y; }
+  noise(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    const xf = x - Math.floor(x), yf = y - Math.floor(y);
+    const u = this.fade(xf), v = this.fade(yf);
+    const aa = this.perm[this.perm[X] + Y], ab = this.perm[this.perm[X] + Y + 1];
+    const ba = this.perm[this.perm[X + 1] + Y], bb = this.perm[this.perm[X + 1] + Y + 1];
+    return this.lerp(v, this.lerp(u, this.grad(aa, xf, yf), this.grad(ba, xf - 1, yf)), this.lerp(u, this.grad(ab, xf, yf - 1), this.grad(bb, xf - 1, yf - 1)));
+  }
+  fbm(x, y, octaves = 4, lacunarity = 2, gain = 0.5) {
+    let value = 0, amplitude = 1, frequency = 1, maxValue = 0;
+    for (let i = 0; i < octaves; i++) { value += amplitude * this.noise(x * frequency, y * frequency); maxValue += amplitude; amplitude *= gain; frequency *= lacunarity; }
+    return value / maxValue;
+  }
+}
+let pn = new PerlinNoise(0);
+const hillParams = { height: 1, spacing: 100, rolling: 1, dunes: 1, detail: 1, displacement: 0.5, freqX: 1, freqZ: 1 };
+let noiseOctaves = 4, noiseLacunarity = 2, noisePersistence = 0.5, noiseSeed = 0;
+let heightRedistribution = 1, warpStrength = 0, crustFactor = 0, tectonicFactor = 0;
+let mbRadius = 40, mbWidth = 15, mbHeight = 100, mbIrregularity = 30;
+let riverStrength = 0, waterBorder = 0;
+
+// ---------- Skybox (declarations) ----------
+const sunParams = {
+  elevation: 32, azimuth: 180, exposure: 0.13, turbidity: 10,
+  rayleigh: 1,
+};
+const skySunDir = new THREE.Vector3();
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0e1117);
-scene.fog = new THREE.Fog(0x0e1117, GRID_SIZE * 0.4, GRID_SIZE * 1.2);
+scene.fog = new THREE.Fog(0x0e1117, GRID_SIZE * 2, GRID_SIZE * 6);
 
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 4000);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 20000);
 camera.position.set(80, 60, 120);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+// ---------- Skybox (init) ----------
+const sceneEnv = new THREE.Scene();
+const sky = new Sky();
+sky.scale.setScalar(10000);
+sceneEnv.add(sky);
+const skyVisual = new Sky();
+skyVisual.scale.setScalar(10000);
+skyVisual.frustumCulled = false;
+skyVisual.visible = false;
+scene.add(skyVisual);
+const skyUniforms = sky.material.uniforms;
+const skyVisUniforms = skyVisual.material.uniforms;
+let skyRenderTarget;
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+
+function applySkyUniforms() {
+  skyUniforms.turbidity.value = sunParams.turbidity;
+  skyUniforms.rayleigh.value = sunParams.rayleigh;
+  skyVisUniforms.turbidity.value = sunParams.turbidity;
+  skyVisUniforms.rayleigh.value = sunParams.rayleigh;
+  renderer.toneMappingExposure = sunParams.exposure;
+}
+
+let updateSunTimer = null;
+function updateSunThrottled() {
+  clearTimeout(updateSunTimer);
+  updateSunTimer = setTimeout(() => {
+    updateSun();
+  }, 50);
+}
+
+function updateSun() {
+  const phi = THREE.MathUtils.degToRad(90 - sunParams.elevation);
+  const theta = THREE.MathUtils.degToRad(sunParams.azimuth);
+  skySunDir.setFromSphericalCoords(1, phi, theta);
+  skyUniforms.sunPosition.value.copy(skySunDir);
+  skyVisUniforms.sunPosition.value.copy(skySunDir);
+  if (skyRenderTarget !== undefined) skyRenderTarget.dispose();
+  skyUniforms.mieCoefficient.value = 0.005;
+  skyUniforms.mieDirectionalG.value = 0.8;
+  skyVisUniforms.mieCoefficient.value = 0.005;
+  skyVisUniforms.mieDirectionalG.value = 0.8;
+  skyRenderTarget = pmremGenerator.fromScene(sceneEnv);
+  scene.environment = skyRenderTarget.texture;
+  applySkyUniforms();
+}
+
+function updateSkyVisuals() {
+  applySkyUniforms();
+}
+
+const skyboxControlsEl = document.getElementById('skybox-controls');
+const sunElevationInput = document.getElementById('sun-elevation');
+const sunAzimuthInput = document.getElementById('sun-azimuth');
+const sunExposureInput = document.getElementById('sun-exposure');
+const sunTurbidityInput = document.getElementById('sun-turbidity');
+const skyRayleighInput = document.getElementById('sky-rayleigh');
+const sunElevationVal = document.getElementById('sun-elevation-val');
+const sunAzimuthVal = document.getElementById('sun-azimuth-val');
+const sunExposureVal = document.getElementById('sun-exposure-val');
+const sunTurbidityVal = document.getElementById('sun-turbidity-val');
+const skyRayleighVal = document.getElementById('sky-rayleigh-val');
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -255,7 +517,7 @@ scene.add(grid);
 
 const clock = new THREE.Clock();
 const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/libs/draco/gltf/');
+dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/libs/draco/gltf/');
 const loader = new GLTFLoader();
 loader.setDRACOLoader(dracoLoader);
 const entries = [];
@@ -288,12 +550,12 @@ function configureMeshMaterials(mesh) {
   const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   for (const mat of materials) {
     if (!mat) continue;
-    if (/trunk/i.test(mat.name) && mat.map) {
-      mat.transparent = false;
-      mat.depthWrite = true;
+    mat.transparent = false;
+    mat.depthWrite = true;
+    if (mat.map || mat.alphaMap) {
       mat.alphaTest = 0.5;
-      mat.side = THREE.DoubleSide;
     }
+    mat.side = THREE.DoubleSide;
   }
 }
 
@@ -476,24 +738,29 @@ function centerCharacterModel(model) {
 }
 
 async function loadCharacterGltf(def) {
-  const res = await fetch(def.url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const total = Number(res.headers.get('Content-Length')) || 0;
-  const reader = res.body.getReader();
-  const chunks = [];
-  let loaded = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    loaded += value.length;
-    const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : null;
-    setStatus(pct !== null ? `Loading ${def.label}… ${pct}%` : `Loading ${def.label}… ${(loaded / 1048576).toFixed(1)} MB`);
+  try {
+    const res = await fetch(def.url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const total = Number(res.headers.get('Content-Length')) || 0;
+    const reader = res.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : null;
+      setStatus(pct !== null ? `Loading ${def.label}… ${pct}%` : `Loading ${def.label}… ${(loaded / 1048576).toFixed(1)} MB`);
+    }
+    const buffer = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
+    return new Promise((resolve, reject) => { loader.parse(buffer.buffer, '', resolve, reject); });
+  } catch (err) {
+    console.warn(`Fetch failed for ${def.url}, falling back to GLTFLoader.load:`, err);
+    return new Promise((resolve, reject) => loader.load(def.url, resolve, undefined, reject));
   }
-  const buffer = new Uint8Array(loaded);
-  let offset = 0;
-  for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
-  return new Promise((resolve, reject) => { new GLTFLoader().parse(buffer.buffer, '', resolve, reject); });
 }
 
 function fadeToAction(entry, next, duration) {
@@ -526,9 +793,11 @@ function inputDirection(out) {
   _forward.y = 0;
   _forward.normalize();
   _right2.crossVectors(_forward, _up).normalize();
+  const fwd = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+  const side = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
   out.set(0, 0, 0)
-    .addScaledVector(_forward, (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0))
-    .addScaledVector(_right2, (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0));
+    .addScaledVector(_forward, fwd)
+    .addScaledVector(_right2, side);
   if (out.lengthSq() < 1e-6) return false;
   out.normalize();
   return true;
@@ -554,7 +823,7 @@ function updateGameplay(char, delta) {
     return;
   }
   if (char.oneShot) return;
-  const moving = keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
+  const moving = keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD || keys.ArrowUp || keys.ArrowLeft || keys.ArrowDown || keys.ArrowRight;
   const want = moving ? 'walk' : 'idle';
   if (char.state !== want) setGameplayState(char, want);
   if (!moving) return;
@@ -578,12 +847,12 @@ function triggerRoll(char) {
 function frameCameraChar(char) {
   const h = char.height;
   const pos = char.group.position;
-  controls.target.set(pos.x, pos.y + h * 0.4, pos.z);
-  camera.position.set(pos.x, pos.y + h * 0.55, pos.z + h * 2);
+  controls.target.set(pos.x, pos.y + h * 0.5, pos.z);
+  camera.position.set(pos.x, pos.y + h * 1.5, pos.z - h * 3);
   controls.minDistance = h * 0.8;
-  controls.maxDistance = h * 6;
-  camera.near = Math.max(1, h * 0.1);
-  camera.far = Math.max(2000, h * 20);
+  controls.maxDistance = h * 20;
+  camera.near = Math.max(0.1, h * 0.1);
+  camera.far = Math.max(20000, h * 60);
   camera.updateProjectionMatrix();
   controls.update();
 }
@@ -613,13 +882,47 @@ function resetToIdle(char) {
 // ---------- Terrain / Water ----------
 
 function updateTerrain(entry) {
+  if (!entry) return;
   const scale = parseFloat(terrainHeightInput.value);
   const rough = parseFloat(terrainRoughnessInput.value) / 100;
   const pos = entry.mesh.geometry.attributes.position;
   const arr = pos.array;
   const nh = entry._normalizedHeights;
+  const bp = entry._basePositions;
+
+  const heights = new Float32Array(pos.count);
+  let minH = Infinity, maxH = -Infinity;
   for (let i = 0; i < pos.count; i++) {
-    arr[i * 3 + 1] = nh[i] * scale;
+    const h = nh[i] * scale + noiseHeight(bp[i * 2], bp[i * 2 + 1]);
+    heights[i] = h;
+    if (h < minH) minH = h;
+    if (h > maxH) maxH = h;
+  }
+  const range = maxH - minH || 1;
+  if (heightRedistribution !== 1) {
+    for (let i = 0; i < pos.count; i++) {
+      const t = (heights[i] - minH) / range;
+      heights[i] = minH + Math.pow(t, heightRedistribution) * range;
+    }
+  }
+  if (waterBorder > 0) {
+    const half = GRID_SIZE / 2;
+    const borderFrac = waterBorder / 100;
+    let borderMinH = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      if (heights[i] < borderMinH) borderMinH = heights[i];
+    }
+    for (let i = 0; i < pos.count; i++) {
+      const dx = Math.abs(bp[i * 2]) / half;
+      const dz = Math.abs(bp[i * 2 + 1]) / half;
+      const edgeDist = Math.max(dx, dz);
+      const t = Math.max(0, (edgeDist - (1 - borderFrac)) / borderFrac);
+      heights[i] = heights[i] * (1 - t) + borderMinH * t;
+    }
+  }
+  carveRivers(heights, pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    arr[i * 3 + 1] = heights[i];
   }
   pos.needsUpdate = true;
   entry.mesh.geometry.computeVertexNormals();
@@ -647,6 +950,86 @@ function updateWater(entry) {
   terrainWaterOpacityVal.textContent = Math.round(op * 100);
 }
 
+// ---------- Terrain noise generation ----------
+function noiseHeight(x, z) {
+  if (mbRadius > 0) {
+    const half = GRID_SIZE / 2;
+    const dist = Math.sqrt(x * x + z * z) / half;
+    const mbRadiusNorm = mbRadius / 100;
+    const mbWidthNorm = mbWidth / 100;
+    const irreg = mbIrregularity * 0.01;
+    const noiseOff = irreg > 0 ? pn.fbm(x * 0.005, z * 0.005, noiseOctaves, noiseLacunarity, noisePersistence) * irreg : 0;
+    const ringDist = (dist + noiseOff - mbRadiusNorm) / mbWidthNorm;
+    const ringWeight = Math.exp(-ringDist * ringDist);
+    const mtnNoise = pn.fbm(x * 0.012, z * 0.012, noiseOctaves, noiseLacunarity, noisePersistence);
+    const detail = hillParams.detail !== 0 ? pn.noise(x * 0.03, z * 0.03) * 10 * hillParams.detail : 0;
+    const dune = hillParams.dunes !== 0 ? pn.noise(x * 0.006, z * 0.006) * 20 * hillParams.dunes : 0;
+    let h = ringWeight * (0.5 + mtnNoise * 0.5) * (mbHeight / 100) * 100 + detail + dune;
+    return h * hillParams.height * hillParams.rolling;
+  }
+  const baseScale = hillParams.spacing * 3 * (GRID_SIZE / 1000);
+  const sx = baseScale / Math.max(0.01, hillParams.freqX);
+  const sz = baseScale / Math.max(0.01, hillParams.freqZ);
+  let nx = x / sx, nz = z / sz;
+  if (warpStrength > 0) {
+    const w = warpStrength / baseScale;
+    nx += pn.fbm(x * 0.005 + 100, z * 0.005, 2, 2, 0.5) * w;
+    nz += pn.fbm(x * 0.005 + 200, z * 0.005 + 100, 2, 2, 0.5) * w;
+  }
+  const n = pn.fbm(nx, nz, noiseOctaves, noiseLacunarity, noisePersistence);
+  const detailNoise = hillParams.detail !== 0 ? pn.noise(x * 0.02, z * 0.02) * 0.2 * hillParams.detail : 0;
+  const duneNoise = hillParams.dunes !== 0 ? pn.noise(x * 0.004, z * 0.004) * 0.4 * hillParams.dunes : 0;
+  const base = (n + detailNoise + duneNoise) * hillParams.height * 120 * hillParams.rolling;
+  let tectonicMod = 0;
+  if (crustFactor !== 0 || tectonicFactor !== 0) {
+    const crustScale = hillParams.spacing * 6;
+    const crust = pn.fbm(x / crustScale, z / crustScale, 3, 2.5, 0.5);
+    const tectonic = 0.2 / (Math.abs(crust) + 0.1) - 0.95;
+    tectonicMod = (crust * crustFactor + tectonic * tectonicFactor) * 20;
+  }
+  return base + tectonicMod;
+}
+
+function seededRandom(seed) { let s = (seed >>> 0) || 1; return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; }
+
+function carveRivers(heights, count) {
+  if (riverStrength === 0) return;
+  const gridSize = Math.sqrt(count) | 0; const segs = gridSize - 1;
+  const flow = new Float32Array(count); const downhill = new Int32Array(count);
+  for (let i = 0; i < count; i++) {
+    const row = Math.floor(i / gridSize); const col = i % gridSize;
+    let bestH = heights[i], bestIdx = -1;
+    if (row > 0) { const j = i - gridSize; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
+    if (row < segs) { const j = i + gridSize; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
+    if (col > 0) { const j = i - 1; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
+    if (col < segs) { const j = i + 1; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
+    downhill[i] = bestIdx;
+  }
+  let minH = Infinity, maxH = -Infinity;
+  for (let i = 0; i < count; i++) { if (heights[i] < minH) minH = heights[i]; if (heights[i] > maxH) maxH = heights[i]; }
+  const threshold = minH + (maxH - minH) * 0.65;
+  const candidates = [];
+  for (let i = 0; i < count; i++) { if (heights[i] > threshold) candidates.push(i); }
+  if (candidates.length < 5) return;
+  const numRivers = Math.max(1, Math.floor(riverStrength * 0.4 + 1));
+  const depthScale = riverStrength / 100;
+  const rand = seededRandom(noiseSeed + 7919);
+  for (let r = 0; r < Math.min(numRivers, candidates.length); r++) {
+    let idx = candidates[Math.floor(rand() * candidates.length)];
+    let steps = 0;
+    while (idx >= 0 && steps < 5000) { flow[idx] += 1; idx = downhill[idx]; steps++; }
+  }
+  for (let i = 0; i < count; i++) { if (flow[i] > 0) heights[i] -= Math.min(30, 0.5 + flow[i] * 0.6) * depthScale; }
+}
+
+let terrainUpdatePending = false;
+
+function scheduleTerrainUpdate() {
+  if (terrainUpdatePending) return;
+  terrainUpdatePending = true;
+  requestAnimationFrame(() => { updateTerrain(terrainEntry); terrainUpdatePending = false; });
+}
+
 // ---------- Forest helpers ----------
 
 function mulberry32(seed) {
@@ -669,15 +1052,11 @@ function forestRadius(count, density) {
 }
 
 function forestOptionsFromParams(params) {
-  const rotXMin = THREE.MathUtils.degToRad(params.rotXMin ?? 0);
-  const rotXMax = THREE.MathUtils.degToRad(params.rotXMax ?? 360);
   return {
     count: params.count,
     minSpacing: densityToSpacing(params.density),
     radius: forestRadius(params.count, params.density),
     seed: params.seed ?? 42,
-    rotXMin: Math.min(rotXMin, rotXMax),
-    rotXMax: Math.max(rotXMin, rotXMax),
   };
 }
 
@@ -705,25 +1084,46 @@ function enableWindMaterial(material) {
 
 function bakeTreeTemplate(template) {
   template.updateWorldMatrix(true, true);
-  const mesh = template.children.find((child) => child.isMesh)
-    ?? template.getObjectByProperty('type', 'Mesh');
-  if (!mesh) throw new Error(`No mesh on template ${template.name}`);
+  const meshes = [];
+  template.traverse((child) => {
+    if (child.isMesh) meshes.push(child);
+  });
+  if (!meshes.length) throw new Error(`No mesh on template ${template.name}`);
 
-  const geometry = mesh.geometry.clone();
-  geometry.applyMatrix4(mesh.matrixWorld);
-  geometry.morphAttributes = {};
-  geometry.morphTargetsRelative = false;
-  geometry.computeBoundingBox();
-  geometry.translate(0, -geometry.boundingBox.min.y, 0);
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
+  const totalBox = computeMeshBox(template);
+  const minY = Number.isFinite(totalBox.min.y) ? totalBox.min.y : 0;
 
-  const material = mesh.material.clone();
-  material.morphTargets = false;
-  material.morphNormals = false;
-  enableWindMaterial(material);
+  const parts = meshes.map((mesh) => {
+    const geometry = mesh.geometry.clone();
+    geometry.applyMatrix4(mesh.matrixWorld);
+    geometry.morphAttributes = {};
+    geometry.morphTargetsRelative = false;
+    geometry.translate(0, -minY, 0);
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
 
-  return { name: template.name, geometry, material };
+    const mat = Array.isArray(mesh.material)
+      ? mesh.material.map((m) => {
+          const c = m.clone();
+          c.morphTargets = false;
+          c.morphNormals = false;
+          c.side = THREE.DoubleSide;
+          enableWindMaterial(c);
+          return c;
+        })
+      : (() => {
+          const c = mesh.material.clone();
+          c.morphTargets = false;
+          c.morphNormals = false;
+          c.side = THREE.DoubleSide;
+          enableWindMaterial(c);
+          return c;
+        })();
+
+    return { geometry, material: mat };
+  });
+
+  return { name: template.name, parts };
 }
 
 function generateForestPlacements(count, radius, minSpacing, rng) {
@@ -772,12 +1172,13 @@ function generateForestPlacements(count, radius, minSpacing, rng) {
   return placed;
 }
 
-function buildInstancedForest(gltf, options, templateCache = null) {
-  const layout = findLayoutRoot(gltf.scene);
-  const templateNodes = layout.children.filter(hasMesh);
-  if (!templateNodes.length) throw new Error('No tree templates found in autumn GLB');
-
-  const templates = templateCache ?? templateNodes.map(bakeTreeTemplate);
+function buildInstancedForest(gltf, options, templates = null) {
+  if (!templates) {
+    const layout = findLayoutRoot(gltf.scene);
+    const templateNodes = layout.children.filter(hasMesh);
+    if (!templateNodes.length) throw new Error('No tree templates found');
+    templates = templateNodes.map(bakeTreeTemplate);
+  }
   const rng = mulberry32(options.seed ?? 1);
   const placements = generateForestPlacements(
     options.count ?? 24,
@@ -805,23 +1206,26 @@ function buildInstancedForest(gltf, options, templateCache = null) {
     const instances = buckets[i];
     if (!instances.length) continue;
 
-    const { geometry, material } = templates[i];
-    const mesh = new THREE.InstancedMesh(geometry, material, instances.length);
-    mesh.frustumCulled = false;
+    const { parts } = templates[i];
+    for (const part of parts) {
+      const mesh = new THREE.InstancedMesh(part.geometry, part.material, instances.length);
+      mesh.frustumCulled = false;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
 
-    for (let j = 0; j < instances.length; j++) {
-      const inst = instances[j];
-      _dummy.position.set(inst.x, 0, inst.z);
-      // Baked geometry has trunk along Y; spin maps from mesh.rotation.x (trunk axis).
-      _dummy.rotation.set(0, inst.spin, 0);
-      _dummy.scale.setScalar(inst.scale);
-      _dummy.updateMatrix();
-      mesh.setMatrixAt(j, _dummy.matrix);
+      for (let j = 0; j < instances.length; j++) {
+        const inst = instances[j];
+        _dummy.position.set(inst.x, 0, inst.z);
+        _dummy.rotation.set(0, inst.spin, 0);
+        _dummy.scale.setScalar(inst.scale);
+        _dummy.updateMatrix();
+        mesh.setMatrixAt(j, _dummy.matrix);
+      }
+
+      mesh.instanceMatrix.needsUpdate = true;
+      forest.add(mesh);
+      instancedMeshes.push(mesh);
     }
-
-    mesh.instanceMatrix.needsUpdate = true;
-    forest.add(mesh);
-    instancedMeshes.push(mesh);
   }
 
   return { forest, instancedMeshes, treeCount: placements.length, templates };
@@ -831,25 +1235,34 @@ function clearInstancedForest(root) {
   while (root.children.length) {
     const child = root.children[0];
     if (child.isInstancedMesh) {
-      child.geometry.dispose();
-      child.material.dispose();
       child.dispose();
     }
     root.remove(child);
   }
 }
 
-function rebuildAutumnForest(entry) {
+function extractTemplates(gltf) {
+  const layout = findLayoutRoot(gltf.scene);
+  const templateNodes = layout.children.filter(hasMesh);
+  if (!templateNodes.length) throw new Error('No templates found in GLB');
+  return templateNodes.map(bakeTreeTemplate);
+}
+
+function rebuildFoliageForest(entry) {
   clearInstancedForest(entry.root);
 
-  const built = buildInstancedForest(
-    entry.gltf,
-    forestOptionsFromParams(entry.forestParams),
-    entry.forestTemplates,
-  );
-  entry.forestTemplates = built.templates;
-  prepareMeshes(built.forest);
+  const enabledTemplates = entry.allTemplates.filter((_, i) => {
+    const cb = document.querySelector(`[data-template-id="${i}"]`);
+    return !cb || cb.checked;
+  });
+  if (!enabledTemplates.length) return;
 
+  const built = buildInstancedForest(
+    null,
+    forestOptionsFromParams(entry.forestParams),
+    enabledTemplates,
+  );
+  prepareMeshes(built.forest);
   for (const mesh of built.instancedMeshes) entry.root.add(mesh);
   entry.instancedMeshes = built.instancedMeshes;
   entry.treeCount = built.treeCount;
@@ -857,67 +1270,125 @@ function rebuildAutumnForest(entry) {
   entry.size.copy(size);
   entry.height = height;
   forestCountVal.textContent = `${built.treeCount}`;
-  if (activeEntry === entry) frameModel(entry);
+}
+
+function populateFoliageTypes(entry) {
+  const container = document.getElementById('foliage-types');
+  container.innerHTML = '';
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Types';
+  container.appendChild(h2);
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:6px;margin-bottom:2px;';
+  const checkAll = document.createElement('button');
+  checkAll.type = 'button';
+  checkAll.textContent = 'Check All';
+  checkAll.className = 'tab';
+  checkAll.style.cssText = 'padding:4px 10px;font-size:10px;';
+  checkAll.addEventListener('click', () => {
+    container.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = true; });
+    scheduleForestRebuild();
+  });
+  const uncheckAll = document.createElement('button');
+  uncheckAll.type = 'button';
+  uncheckAll.textContent = 'Uncheck All';
+  uncheckAll.className = 'tab';
+  uncheckAll.style.cssText = 'padding:4px 10px;font-size:10px;';
+  uncheckAll.addEventListener('click', () => {
+    container.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+    scheduleForestRebuild();
+  });
+  btnRow.appendChild(checkAll);
+  btnRow.appendChild(uncheckAll);
+  container.appendChild(btnRow);
+  const groups = {};
+  entry.allTemplates.forEach((t, i) => {
+    const key = t.sourceLabel || 'Other';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ t, i });
+  });
+  for (const [source, items] of Object.entries(groups)) {
+    const title = document.createElement('div');
+    title.className = 'foliage-source-title';
+    title.textContent = source;
+    container.appendChild(title);
+    for (const { t, i } of items) {
+      const row = document.createElement('div');
+      row.className = 'foliage-type';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = true;
+      cb.dataset.templateId = i;
+      cb.addEventListener('change', scheduleForestRebuild);
+      const visual = document.createElement('span');
+      visual.className = 'cb-visual';
+      const mark = document.createElement('span');
+      mark.className = 'check';
+      mark.textContent = '✓';
+      visual.appendChild(mark);
+      visual.addEventListener('click', () => { cb.checked = !cb.checked; scheduleForestRebuild(); });
+      const text = document.createElement('span');
+      text.textContent = t.name.replace(/_/g, ' ');
+      row.appendChild(cb);
+      row.appendChild(visual);
+      row.appendChild(text);
+      container.appendChild(row);
+    }
+  }
 }
 
 function syncForestControlsUI(params) {
   forestCountInput.value = params.count;
   forestDensityInput.value = params.density;
-  forestRotXMinInput.value = params.rotXMin;
-  forestRotXMaxInput.value = params.rotXMax;
-  forestCountVal.textContent = autumnEntry?.treeCount ?? params.count;
+  forestCountVal.textContent = foliageEntry?.treeCount ?? params.count;
   forestDensityVal.textContent = params.density;
-  forestRotXMinVal.textContent = params.rotXMin;
-  forestRotXMaxVal.textContent = params.rotXMax;
 }
 
 function readForestParamsFromUI() {
   return {
     count: Number(forestCountInput.value),
     density: Number(forestDensityInput.value),
-    rotXMin: Number(forestRotXMinInput.value),
-    rotXMax: Number(forestRotXMaxInput.value),
-    seed: autumnEntry?.forestParams.seed ?? 42,
+    seed: foliageEntry?.forestParams.seed ?? 42,
   };
 }
 
 function scheduleForestRebuild() {
-  if (!autumnEntry) return;
-  autumnEntry.forestParams = readForestParamsFromUI();
-  syncForestControlsUI(autumnEntry.forestParams);
+  if (!foliageEntry) return;
+  foliageEntry.forestParams = readForestParamsFromUI();
+  syncForestControlsUI(foliageEntry.forestParams);
   clearTimeout(forestRebuildTimer);
   forestRebuildTimer = setTimeout(() => {
-    try { rebuildAutumnForest(autumnEntry); } catch (e) { console.error('Forest rebuild failed', e); }
+    try { rebuildFoliageForest(foliageEntry); } catch (e) { console.error('Forest rebuild failed', e); }
   }, 120);
 }
 
 function fitScene(modelSize) {
   const target = modelSize * 1.4;
   if (target <= GRID_SIZE) return;
-  const factor = target / GRID_SIZE;
   GRID_SIZE = target;
-  scene.fog.far = GRID_SIZE * 5;
-  scene.fog.near = GRID_SIZE * 2;
-  camera.far = Math.max(camera.far, GRID_SIZE * 4);
+  const factor = GRID_SIZE / BASE_GRID_SIZE;
+  scene.fog.far = GRID_SIZE * 8;
+  scene.fog.near = GRID_SIZE * 3;
+  camera.far = Math.max(camera.far, GRID_SIZE * 10);
   camera.updateProjectionMatrix();
-  sun.position.multiplyScalar(factor);
-  fill.position.multiplyScalar(factor);
+  sun.position.set(120 * factor, 180 * factor, 100 * factor);
+  fill.position.set(-100 * factor, 80 * factor, -60 * factor);
   floor.scale.setScalar(factor);
   scene.remove(grid);
   grid = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS, 0x4a5568, 0x2d3748);
   grid.position.y = 0.01;
   scene.add(grid);
-  controls.maxDistance = GRID_SIZE * 0.8;
+  controls.maxDistance = GRID_SIZE * 3;
 }
 
 function frameModel(entry) {
   const { size, height } = entry;
   const radius = Math.max(size.x, size.z, height) * 0.55;
   const dist = Math.max(radius * 2.8, 40);
-  const maxDist = Math.max(dist * 3, GRID_SIZE * 0.8);
+  const maxDist = Math.max(dist * 3, GRID_SIZE * 3);
 
-  camera.near = Math.max(1, radius * 0.2);
-  camera.far = Math.max(4000, maxDist * 1.5);
+  camera.near = Math.max(0.1, radius * 0.2);
+  camera.far = Math.max(20000, maxDist * 3);
   camera.updateProjectionMatrix();
   controls.target.set(0, height * 0.35, 0);
   camera.position.set(dist * 0.65, dist * 0.45, dist);
@@ -949,9 +1420,12 @@ async function loadHeightmapImage(def) {
 
   const uv = geometry.attributes.uv;
   const pos = geometry.attributes.position;
+  const basePos = new Float32Array(pos.count * 2);
   let minH = Infinity, maxH = -Infinity;
   const heights = new Float32Array(pos.count);
   for (let i = 0; i < pos.count; i++) {
+    basePos[i * 2] = pos.getX(i);
+    basePos[i * 2 + 1] = pos.getZ(i);
     const px = Math.min(Math.floor(uv.getX(i) * size), size - 1);
     const py = Math.min(Math.floor((1 - uv.getY(i)) * size), size - 1);
     const idx = (py * size + px) * 4;
@@ -1048,6 +1522,7 @@ async function loadHeightmapImage(def) {
     waterMat,
     heightScale,
     _normalizedHeights: new Float32Array(pos.count),
+    _basePositions: basePos,
   };
   for (let i = 0; i < pos.count; i++) {
     entry._normalizedHeights[i] = (heights[i] - minH) / range;
@@ -1055,14 +1530,60 @@ async function loadHeightmapImage(def) {
   return entry;
 }
 
+// ---------- Loading Manager ----------
+const loadingMgr = {
+  _items: [],
+  _done: 0,
+  _total: 0,
+  _container: document.getElementById('loading-items'),
+  init(names) {
+    this._items = [];
+    this._done = 0;
+    this._total = names.length;
+    this._container.innerHTML = '';
+    for (const name of names) {
+      const row = document.createElement('div');
+      row.className = 'loading-row';
+      row.innerHTML = `<span class="loading-name">${name}</span><span class="loading-status">Pending</span>`;
+      this._container.appendChild(row);
+      this._items.push({ name, el: row.lastElementChild });
+    }
+  },
+  set(name, status) {
+    const item = this._items.find(i => i.name === name);
+    if (!item || item.completed) return;
+    item.el.textContent = status;
+    item.el.className = 'loading-status ' + status.toLowerCase();
+    if (status === 'Complete' || status === 'Error') {
+      item.completed = true;
+      this._done++;
+      if (this._done >= this._total) {
+        setTimeout(() => document.getElementById('loading-screen').classList.add('hidden'), 400);
+      }
+    }
+  },
+};
+
 async function loadModel(def) {
   setStatus(`Loading ${def.label}…`);
 
+  if (def.type === 'skybox') {
+    loadingMgr.set(def.label, 'Complete');
+    const group = new THREE.Group();
+    group.visible = false;
+    scene.add(group);
+    return { def, group, root: group, mixer: null, isSkybox: true };
+  }
+
   if (def.type === 'heightmap-image') {
-    return loadHeightmapImage(def);
+    loadingMgr.set(def.label, 'Loading');
+    const entry = await loadHeightmapImage(def);
+    loadingMgr.set(def.label, 'Complete');
+    return entry;
   }
 
   if (def.character) {
+    loadingMgr.set(def.label, 'Loading');
     const gltf = await loadCharacterGltf(def);
     setStatus(`Processing ${def.label}…`);
     await new Promise((r) => setTimeout(r));
@@ -1082,24 +1603,82 @@ async function loadModel(def) {
     const entry = { def, group, mixer, height, clips, currentAction: null, clipIndex: 0, oneShot: null, actions: {}, rollDir: new THREE.Vector3(), isCharacter: true };
 
     if (def.character.mode === 'gameplay') {
-      const byName = Object.fromEntries(clips.map((c) => [c.name, c]));
-      entry.actions.idle = mixer.clipAction(byName[def.character.clips.idle]);
-      entry.actions.walk = mixer.clipAction(inPlaceClip(byName[def.character.clips.walk]));
-      entry.actions.roll = mixer.clipAction(inPlaceClip(byName[def.character.clips.roll]));
-      entry.actions.jump = mixer.clipAction(byName[def.character.clips.jump]);
+      const findClip = (targetName) => {
+        if (!targetName) return null;
+        const lower = targetName.toLowerCase();
+        return clips.find((c) => c.name === targetName) ||
+               clips.find((c) => c.name.toLowerCase().includes(lower)) ||
+               clips[0] || null;
+      };
+      const idleClip = findClip(def.character.clips.idle);
+      const walkClip = findClip(def.character.clips.walk);
+      const rollClip = findClip(def.character.clips.roll);
+      const jumpClip = findClip(def.character.clips.jump);
+
+      if (idleClip) entry.actions.idle = mixer.clipAction(idleClip);
+      if (walkClip) entry.actions.walk = mixer.clipAction(inPlaceClip(walkClip));
+      if (rollClip) entry.actions.roll = mixer.clipAction(inPlaceClip(rollClip));
+      if (jumpClip) entry.actions.jump = mixer.clipAction(jumpClip);
+
       for (const name of ['jump', 'roll']) {
-        entry.actions[name].setLoop(THREE.LoopOnce, 1);
-        entry.actions[name].clampWhenFinished = true;
+        if (entry.actions[name]) {
+          entry.actions[name].setLoop(THREE.LoopOnce, 1);
+          entry.actions[name].clampWhenFinished = true;
+        }
       }
       entry.state = 'idle';
       mixer.addEventListener('finished', () => {
         entry.oneShot = null;
-        const moving = keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
+        const moving = keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD || keys.ArrowUp || keys.ArrowLeft || keys.ArrowDown || keys.ArrowRight;
         setGameplayState(entry, moving ? 'walk' : 'idle');
       });
     }
 
+    loadingMgr.set(def.label, 'Complete');
     return entry;
+  }
+
+  if (def.foliage) {
+    setStatus(`Loading foliage…`);
+    const allTemplates = [];
+    for (const m of def.foliage.models) {
+      loadingMgr.set(m.label, 'Loading');
+      try {
+        const gltf = await new Promise((resolve, reject) => loader.load(m.url, resolve, undefined, reject));
+        const templates = extractTemplates(gltf);
+        for (const t of templates) t.sourceLabel = m.label;
+        allTemplates.push(...templates);
+        loadingMgr.set(m.label, 'Complete');
+      } catch (err) {
+        console.error(`Failed to load foliage model ${m.label}:`, err);
+        loadingMgr.set(m.label, 'Error');
+      }
+    }
+
+    const forestParams = {
+      count: def.foliage.forest.count ?? 500,
+      density: def.foliage.forest.density ?? 70,
+      seed: def.foliage.forest.seed ?? 42,
+    };
+
+    const built = buildInstancedForest(null, forestOptionsFromParams(forestParams), allTemplates);
+    prepareMeshes(built.forest);
+    const group = new THREE.Group();
+    group.visible = false;
+    scene.add(group);
+    group.add(built.forest);
+    const { size, height } = centerOnGround(built.forest);
+    return {
+      def, group,
+      root: built.forest,
+      allTemplates,
+      forestTemplates: built.templates,
+      instancedMeshes: built.instancedMeshes,
+      treeCount: built.treeCount,
+      mixer: null, size, height,
+      isForest: true,
+      forestParams,
+    };
   }
 
   const gltf = await new Promise((resolve, reject) => {
@@ -1116,8 +1695,6 @@ async function loadModel(def) {
       count: def.forest.count ?? 500,
       density: def.forest.density ?? 70,
       seed: def.forest.seed ?? 42,
-      rotXMin: def.forest.rotXMin ?? 0,
-      rotXMax: def.forest.rotXMax ?? 360,
     };
     const built = buildInstancedForest(gltf, forestOptionsFromParams(forestParams));
     prepareMeshes(built.forest);
@@ -1157,6 +1734,7 @@ async function loadModel(def) {
 
 function setActiveEntry(entry) {
   const changed = activeEntry !== entry;
+  const wasSkybox = activeEntry?.isSkybox;
 
   if (changed && activeEntry?.isCharacter) stopCharacter(activeEntry);
 
@@ -1176,18 +1754,50 @@ function setActiveEntry(entry) {
   forestControlsEl.classList.toggle('hidden', !showForestControls);
   const showTerrainControls = entry.isTerrain;
   terrainControlsEl.classList.toggle('hidden', !showTerrainControls);
+  const showSkyboxControls = entry.isSkybox;
+  skyboxControlsEl.classList.toggle('hidden', !showSkyboxControls);
+
+  if (changed && wasSkybox && !entry.isSkybox) {
+    skyVisual.visible = false;
+    scene.environment = null;
+    renderer.toneMappingExposure = 1;
+    floor.visible = true;
+    grid.visible = true;
+    controls.enableZoom = true;
+    controls.enablePan = true;
+    const bg = new THREE.Color(0x0e1117);
+    scene.background = bg;
+    scene.fog = new THREE.Fog(bg, GRID_SIZE * 2, GRID_SIZE * 6);
+  }
 
   if (entry.isCharacter) {
+    grid.visible = true;
     resetToIdle(entry);
     if (changed) frameCameraChar(entry);
   } else if (entry.isTerrain) {
+    grid.visible = false;
     if (changed) {
       terrainEntry = entry;
-      terrainHeightInput.value = entry.heightScale;
-      terrainHeightVal.textContent = entry.heightScale;
+      updateTerrain(entry);
       frameModel(entry);
     }
+  } else if (entry.isSkybox) {
+    if (changed) {
+      updateSun();
+      skyVisual.visible = true;
+      floor.visible = true;
+      grid.visible = true;
+      scene.background = null;
+      scene.fog = null;
+      controls.target.set(0, 60, 0);
+      camera.position.set(120, 60, 200);
+      controls.minDistance = 10;
+      controls.maxDistance = 5000;
+      controls.maxPolarAngle = Math.PI * 0.49;
+      controls.update();
+    }
   } else {
+    grid.visible = true;
     if (changed) frameModel(entry);
   }
 }
@@ -1229,21 +1839,133 @@ window.addEventListener('keyup', (e) => {
 
 async function init() {
   try {
+    loadingMgr.init(['Character', 'Autumn Trees', 'Trees & Bushes', 'Terrain', 'Skybox']);
     for (const def of MODELS) {
-      const entry = await loadModel(def);
-      entries.push(entry);
-      if (entry.isForest) autumnEntry = entry;
+      try {
+        const entry = await loadModel(def);
+        entries.push(entry);
+        if (entry.isForest) {
+          foliageEntry = entry;
+          if (entry.allTemplates) populateFoliageTypes(entry);
+        }
+      } catch (err) {
+        console.error(`Failed to load ${def.label}:`, err);
+        if (def.foliage) {
+          for (const m of def.foliage.models) {
+            loadingMgr.set(m.label, 'Error');
+          }
+        } else {
+          loadingMgr.set(def.label, 'Error');
+        }
+      }
     }
     buildTabs();
     forestCountInput.addEventListener('input', scheduleForestRebuild);
     forestDensityInput.addEventListener('input', scheduleForestRebuild);
-    forestRotXMinInput.addEventListener('input', scheduleForestRebuild);
-    forestRotXMaxInput.addEventListener('input', scheduleForestRebuild);
-    terrainHeightInput.addEventListener('input', () => { if (terrainEntry) updateTerrain(terrainEntry); });
-    terrainRoughnessInput.addEventListener('input', () => { if (terrainEntry) updateTerrain(terrainEntry); });
+    // Terrain slider bindings
+    terrainHeightInput.addEventListener('input', () => { if (terrainEntry) scheduleTerrainUpdate(); });
+    terrainRoughnessInput.addEventListener('input', () => { if (terrainEntry) { terrainEntry.material.roughness = parseFloat(terrainRoughnessInput.value) / 100; terrainRoughnessVal.textContent = terrainRoughnessInput.value; } });
     terrainWaterLevelInput.addEventListener('input', () => { if (terrainEntry) updateWater(terrainEntry); });
     terrainWaterOpacityInput.addEventListener('input', () => { if (terrainEntry) updateWater(terrainEntry); });
-    setActiveEntry(entries[0]);
+    (function() {
+      const input = document.getElementById('waterBorder');
+      const val = document.getElementById('waterBorderVal');
+      input.addEventListener('input', () => { waterBorder = Number(input.value); val.textContent = waterBorder; if (terrainEntry) scheduleTerrainUpdate(); });
+    })();
+
+    // Noise
+    function bindNoise(id, valId, parse, fmt) {
+      const input = document.getElementById(id), val = document.getElementById(valId);
+      input.addEventListener('input', () => { val.textContent = fmt(parse(Number(input.value))); if (terrainEntry) scheduleTerrainUpdate(); });
+    }
+    bindNoise('noiseOctaves', 'noiseOctavesVal', v => { noiseOctaves = v; return v; }, v => v);
+    bindNoise('noiseLacunarity', 'noiseLacunarityVal', v => { noiseLacunarity = v / 10; return v / 10; }, v => v.toFixed(1));
+    bindNoise('noisePersistence', 'noisePersistenceVal', v => { noisePersistence = v / 100; return v / 100; }, v => v.toFixed(2));
+
+    // Seed
+    (function() {
+      const input = document.getElementById('noiseSeed');
+      const val = document.getElementById('noiseSeedVal');
+      input.addEventListener('input', () => { noiseSeed = Number(input.value); val.textContent = noiseSeed; pn.setSeed(noiseSeed); if (terrainEntry) scheduleTerrainUpdate(); });
+    })();
+
+    // Hills
+    const pct = v => `${Math.round(v * 100)}%`;
+    function bindHill(id, valId, key, parse, fmt) {
+      const input = document.getElementById(id), val = document.getElementById(valId);
+      input.addEventListener('input', () => { hillParams[key] = parse(Number(input.value)); val.textContent = fmt(hillParams[key]); if (terrainEntry) scheduleTerrainUpdate(); });
+    }
+    bindHill('hillHeight', 'hillHeightVal', 'height', v => v / 100, v => pct(v));
+    bindHill('hillSpacing', 'hillSpacingVal', 'spacing', v => v, v => v);
+    bindHill('hillRolling', 'hillRollingVal', 'rolling', v => v / 100, v => pct(v));
+    bindHill('hillDunes', 'hillDunesVal', 'dunes', v => v / 100, v => pct(v));
+    bindHill('hillDetail', 'hillDetailVal', 'detail', v => v / 100, v => pct(v));
+    bindHill('hillDisplacement', 'hillDisplacementVal', 'displacement', v => v / 10, v => v.toFixed(2));
+    bindHill('freqX', 'freqXVal', 'freqX', v => v / 100, v => v.toFixed(2));
+    bindHill('freqZ', 'freqZVal', 'freqZ', v => v / 100, v => v.toFixed(2));
+
+    // Height Redistribution
+    (function() {
+      const input = document.getElementById('heightRedist');
+      const val = document.getElementById('heightRedistVal');
+      input.addEventListener('input', () => { heightRedistribution = Number(input.value) / 100; val.textContent = heightRedistribution.toFixed(2); if (terrainEntry) scheduleTerrainUpdate(); });
+    })();
+
+    // Domain Warp
+    (function() {
+      const input = document.getElementById('warpStrength');
+      const val = document.getElementById('warpStrengthVal');
+      input.addEventListener('input', () => { warpStrength = Number(input.value); val.textContent = warpStrength; if (terrainEntry) scheduleTerrainUpdate(); });
+    })();
+
+    // Crust Factor
+    (function() {
+      const input = document.getElementById('crustFactor');
+      const val = document.getElementById('crustFactorVal');
+      input.addEventListener('input', () => { crustFactor = Number(input.value) / 10; val.textContent = crustFactor.toFixed(1); if (terrainEntry) scheduleTerrainUpdate(); });
+    })();
+
+    // Tectonic Factor
+    (function() {
+      const input = document.getElementById('tectonicFactor');
+      const val = document.getElementById('tectonicFactorVal');
+      input.addEventListener('input', () => { tectonicFactor = Number(input.value) / 10; val.textContent = tectonicFactor.toFixed(1); if (terrainEntry) scheduleTerrainUpdate(); });
+    })();
+
+    bindNoise('mbRadius', 'mbRadiusVal', v => { mbRadius = v; return v; }, v => `${v}`);
+    bindNoise('mbWidth', 'mbWidthVal', v => { mbWidth = v; return v; }, v => `${v}`);
+    bindNoise('mbHeight', 'mbHeightVal', v => { mbHeight = v; return v; }, v => (v / 100).toFixed(2));
+    bindNoise('mbIrregularity', 'mbIrregularityVal', v => { mbIrregularity = v; return v; }, v => (v / 100).toFixed(2));
+
+    // Rivers
+    (function() {
+      const input = document.getElementById('riverStrength');
+      const val = document.getElementById('riverStrengthVal');
+      input.addEventListener('input', () => { riverStrength = Number(input.value); val.textContent = riverStrength; if (terrainEntry) scheduleTerrainUpdate(); });
+    })();
+
+    function bindSkySlider(id, valId, key, fmt, rebake) {
+      const input = document.getElementById(id);
+      const valEl = document.getElementById(valId);
+      if (!input || !valEl) return;
+      input.addEventListener('input', () => {
+        sunParams[key] = Number(input.value);
+        valEl.textContent = fmt(sunParams[key]);
+        if (rebake) updateSunThrottled(); else updateSkyVisuals();
+      });
+    }
+    bindSkySlider('sun-elevation', 'sun-elevation-val', 'elevation', v => `${v}°`, true);
+    bindSkySlider('sun-azimuth', 'sun-azimuth-val', 'azimuth', v => `${v}°`, true);
+    bindSkySlider('sun-exposure', 'sun-exposure-val', 'exposure', v => v.toFixed(2), false);
+    bindSkySlider('sun-turbidity', 'sun-turbidity-val', 'turbidity', v => v.toFixed(1), false);
+    bindSkySlider('sky-rayleigh', 'sky-rayleigh-val', 'rayleigh', v => v.toFixed(1), false);
+    const speedInput = document.getElementById('speed');
+    const speedVal = document.getElementById('speed-val');
+    speedInput.addEventListener('input', () => {
+      animSpeed = Number(speedInput.value);
+      speedVal.textContent = animSpeed.toFixed(1);
+    });
+    if (entries.length > 0) setActiveEntry(entries[0]);
     setStatus('');
   } catch (err) {
     console.error(err);
@@ -1255,14 +1977,18 @@ function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
 
-  if (activeEntry?.isCharacter) {
+  skyAnimTime += delta * animSpeed;
+  if (activeEntry?.mixer) {
+    activeEntry.mixer.timeScale = animSpeed;
     activeEntry.mixer.update(delta);
+  }
+  if (activeEntry?.isCharacter) {
     updateGameplay(activeEntry, delta);
     followCameraChar(activeEntry);
   } else if (activeEntry?.isForest) {
-    windUniforms.uTime.value = clock.elapsedTime;
-  } else if (activeEntry?.mixer) {
-    activeEntry.mixer.update(delta);
+    windUniforms.uTime.value = skyAnimTime;
+  } else if (activeEntry?.isSkybox) {
+    skyVisUniforms.time.value = skyAnimTime;
   }
 
   controls.update();
