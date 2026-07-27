@@ -78,7 +78,7 @@ canvas.grabbing{cursor:grabbing;}
 #terrain-controls .slider-row input[type=range]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid rgba(255,255,255,0.35);box-shadow:0 2px 8px rgba(0,0,0,0.35);}
 #terrain-controls .slider-row input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid rgba(255,255,255,0.35);box-shadow:0 2px 8px rgba(0,0,0,0.35);}
 #terrain-controls .toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
-#terrain-controls .toggle-row label{font:500 12px/1 system-ui,sans-serif;color:rgba(255,255,255,0.7);flex:1;}
+#terrain-controls .toggle-row label{font:500 12px/1 system-ui,sans-serif;color:rgba(255,255,255,0.7);flex:1;margin-bottom:0;}
 #terrain-controls .toggle-row input[type=checkbox]{accent-color:#64b5f6;}
 #forest-controls.hidden, #terrain-controls.hidden, #skybox-controls.hidden{display:none;}
 #forest-controls h2, #terrain-controls h2, #skybox-controls h2{
@@ -148,6 +148,10 @@ canvas.grabbing{cursor:grabbing;}
     <input type="range" id="terrain-roughness" min="0" max="100" value="85">
   </div>
   <div class="slider-row">
+    <label>Texture Scale <output id="terrain-texture-scale-val">48</output></label>
+    <input type="range" id="terrain-texture-scale" min="8" max="256" value="48" step="1">
+  </div>
+  <div class="slider-row">
     <label>Height Redistribution <output id="heightRedistVal">1.00</output></label>
     <input type="range" id="heightRedist" min="30" max="300" value="100" step="5">
   </div>
@@ -171,10 +175,6 @@ canvas.grabbing{cursor:grabbing;}
   <div class="slider-row">
     <label>Height <output id="hillHeightVal">100%</output></label>
     <input type="range" id="hillHeight" min="0" max="200" value="100" step="1">
-  </div>
-  <div class="slider-row">
-    <label>Scale <output id="hillSpacingVal">100</output></label>
-    <input type="range" id="hillSpacing" min="5" max="500" value="100" step="1">
   </div>
   <div class="slider-row">
     <label>Rolling Hills <output id="hillRollingVal">100%</output></label>
@@ -212,6 +212,10 @@ canvas.grabbing{cursor:grabbing;}
     <label>Tectonic Factor <output id="tectonicFactorVal">0.0</output></label>
     <input type="range" id="tectonicFactor" min="0" max="60" value="0" step="1">
   </div>
+  <div class="toggle-row">
+    <label for="mountainBorderMode">Mountain Border</label>
+    <input type="checkbox" id="mountainBorderMode">
+  </div>
   <div class="slider-row">
     <label>MB Radius <output id="mbRadiusVal">40</output></label>
     <input type="range" id="mbRadius" min="10" max="90" value="40" step="1">
@@ -240,10 +244,23 @@ canvas.grabbing{cursor:grabbing;}
     <label>Water Border <output id="waterBorderVal">0</output></label>
     <input type="range" id="waterBorder" min="0" max="100" value="0" step="1">
   </div>
-  <div class="slider-row">
-    <label>River Strength <output id="riverStrengthVal">0</output></label>
-    <input type="range" id="riverStrength" min="0" max="100" value="0" step="1">
+  <h2>Forest</h2>
+  <div class="toggle-row">
+    <label for="terrainForestEnabled">Enable Forests</label>
+    <input type="checkbox" id="terrainForestEnabled" checked>
   </div>
+  <div class="slider-row">
+    <label>Tree Count <output id="terrain-forest-tree-count-val">300000</output></label>
+    <input type="range" id="terrain-forest-tree-count" min="1000" max="1000000" value="300000" step="1000">
+  </div>
+  <div class="slider-row">
+    <label>Forest Seed <output id="terrain-forest-seed-val">42</output></label>
+    <input type="range" id="terrain-forest-seed" min="0" max="9999" value="42" step="1">
+  </div>
+  <p class="slider-row" style="margin-top:-4px;font:500 11px/1.4 system-ui,sans-serif;color:rgba(255,255,255,0.45);">
+    Random Pine1 &amp; Pine2 mix. Dense groves cluster together; large meadows stay bare.
+    <output id="terrain-forest-count-val">0</output> trees placed.
+  </p>
 </div>
 <div id="skybox-controls" class="hidden">
   <h2>Sun</h2>
@@ -295,6 +312,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const BASE_GRID_SIZE = 8000;
 let GRID_SIZE = BASE_GRID_SIZE;
@@ -342,10 +360,40 @@ const terrainHeightVal = document.getElementById('terrain-height-val');
 const terrainRoughnessVal = document.getElementById('terrain-roughness-val');
 const terrainWaterLevelVal = document.getElementById('terrain-water-level-val');
 const terrainWaterOpacityVal = document.getElementById('terrain-water-opacity-val');
+const terrainTextureScaleInput = document.getElementById('terrain-texture-scale');
+const terrainTextureScaleVal = document.getElementById('terrain-texture-scale-val');
+const terrainForestEnabledInput = document.getElementById('terrainForestEnabled');
+const terrainForestTreeCountInput = document.getElementById('terrain-forest-tree-count');
+const terrainForestTreeCountVal = document.getElementById('terrain-forest-tree-count-val');
+const terrainForestSeedInput = document.getElementById('terrain-forest-seed');
+const terrainForestSeedVal = document.getElementById('terrain-forest-seed-val');
+const terrainForestCountVal = document.getElementById('terrain-forest-count-val');
 
 let foliageEntry = null;
 let forestRebuildTimer = 0;
 let terrainEntry = null;
+let terrainForestEnabled = true;
+let terrainForestTreeCount = 300000;
+let terrainForestSeed = 42;
+let terrainForestRebuildTimer = 0;
+let terrainForestBuildGeneration = 0;
+let pineTemplatesPromise = null;
+let pineProxyTemplates = null;
+
+const TERRAIN_FOREST_GRASS_WEIGHT_MIN = 0.58;
+const TERRAIN_FOREST_SCALE_MIN = 0.06;
+const TERRAIN_FOREST_SCALE_MAX = 0.12;
+const TERRAIN_FOREST_CHUNK_SIZE = 400;
+const TERRAIN_FOREST_LOD_FULL_DISTANCE = 450;
+const TERRAIN_FOREST_LOD_HYSTERESIS = 80;
+const TERRAIN_FOREST_PLACEMENT_BATCH_MS = 14;
+const TERRAIN_FOREST_BUILD_BATCH_MS = 12;
+const TERRAIN_FOREST_BARE_CUTOFF = 0.38;
+const PINE_PACK_URL = './trees_and_bush_pack_lowpoly.glb';
+const _forestCamLocal = new THREE.Vector3();
+const _forestCamLast = new THREE.Vector3();
+let terrainForestLodTick = 0;
+let forestDensityNoise = null;
 
 const EXCLUDED_CLIP = 'T-Pose (No Animation)';
 const CROSSFADE_DURATION = 0.25;
@@ -391,8 +439,9 @@ let pn = new PerlinNoise(0);
 const hillParams = { height: 1, spacing: 100, rolling: 1, dunes: 1, detail: 1, displacement: 0.5, freqX: 1, freqZ: 1 };
 let noiseOctaves = 4, noiseLacunarity = 2, noisePersistence = 0.5, noiseSeed = 0;
 let heightRedistribution = 1, warpStrength = 0, crustFactor = 0, tectonicFactor = 0;
+let mountainBorderMode = false;
 let mbRadius = 40, mbWidth = 15, mbHeight = 100, mbIrregularity = 30;
-let riverStrength = 0, waterBorder = 0;
+let waterBorder = 0;
 
 // ---------- Skybox (declarations) ----------
 const sunParams = {
@@ -408,7 +457,7 @@ scene.fog = new THREE.Fog(0x0e1117, GRID_SIZE * 2, GRID_SIZE * 6);
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 20000);
 camera.position.set(80, 60, 120);
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
@@ -479,7 +528,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.maxPolarAngle = Math.PI * 0.49;
-controls.minDistance = 1;
+controls.minDistance = 0.5;
 controls.maxDistance = GRID_SIZE * 0.8;
 
 canvas.classList.add('grab');
@@ -849,7 +898,7 @@ function frameCameraChar(char) {
   const pos = char.group.position;
   controls.target.set(pos.x, pos.y + h * 0.5, pos.z);
   camera.position.set(pos.x, pos.y + h * 1.5, pos.z - h * 3);
-  controls.minDistance = h * 0.8;
+  controls.minDistance = h * 0.2;
   controls.maxDistance = h * 20;
   camera.near = Math.max(0.1, h * 0.1);
   camera.far = Math.max(20000, h * 60);
@@ -881,6 +930,178 @@ function resetToIdle(char) {
 
 // ---------- Terrain / Water ----------
 
+const TERRAIN_TEXTURE_REFERENCE_SIZE = 8000;
+let terrainTextureScale = 48;
+const TERRAIN_HEX_TILING = {
+  patchScale: 2,
+  useContrastCorrectedBlending: true,
+  lookupSkipThreshold: 0.01,
+  textureSampleCoefficientExponent: 8,
+};
+const terrainTextureLoader = new THREE.TextureLoader();
+
+function loadTerrainTextureSet(prefix) {
+  const tex = terrainTextureLoader.load(`./textures/${prefix}_Color.jpg`);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+let terrainTextureSetsPromise = null;
+let terrainTextureSets = null;
+
+function loadTerrainTextureSets() {
+  if (!terrainTextureSetsPromise) {
+    terrainTextureSetsPromise = Promise.resolve({
+      sand: { color: loadTerrainTextureSet('Ground103_2K-JPG') },
+      grass: { color: loadTerrainTextureSet('Ground037_2K-JPG') },
+      stone: { color: loadTerrainTextureSet('Snow015_2K-JPG') },
+      snow: { color: loadTerrainTextureSet('Snow014_2K-JPG') },
+    }).then((sets) => {
+      terrainTextureSets = sets;
+      updateTerrainTextureScale();
+      return sets;
+    });
+  }
+  return terrainTextureSetsPromise;
+}
+
+const TERRAIN_BLEND_GLSL = `
+#define rnd22(p) fract(sin((p) * mat2(127.1, 311.7, 269.5, 183.3)) * 43758.5453)
+#define srgb2rgb(V) pow(max(V, 0.0), vec4(2.2))
+#define rgb2srgb(V) pow(max(V, 0.0), vec4(1.0 / 2.2))
+
+uniform bool hexTilingUseContrastCorrectedBlending;
+uniform float hexTilingPatchScale;
+uniform float hexTilingLookupSkipThreshold;
+uniform float hexTilingTextureSampleCoefficientExponent;
+
+float terrainHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float terrainNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = terrainHash(i);
+  float b = terrainHash(i + vec2(1.0, 0.0));
+  float c = terrainHash(i + vec2(0.0, 1.0));
+  float d = terrainHash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+vec4 hexTileSample(sampler2D samp, vec2 tileIndex, vec2 U, vec2 Gx, vec2 Gy, vec4 meanColor) {
+  return srgb2rgb(textureGrad(samp, U / hexTilingPatchScale - rnd22(tileIndex), Gx, Gy))
+    - meanColor * float(hexTilingUseContrastCorrectedBlending);
+}
+vec4 textureNoTileNeyret(sampler2D samp, vec2 uv) {
+  mat2 M = inverse(mat2(1.0, 0.0, 0.5, sqrt(3.0) / 2.0));
+  vec2 U = uv * hexTilingPatchScale / 8.0 * exp2(4.0 * 0.2 + 1.0);
+  vec2 V = M * U;
+  vec2 I = floor(V);
+  vec2 Gx = dFdx(U / hexTilingPatchScale);
+  vec2 Gy = dFdy(U / hexTilingPatchScale);
+  vec4 meanColor = hexTilingUseContrastCorrectedBlending ? srgb2rgb(texture2D(samp, U)) : vec4(0.0);
+  vec3 F = vec3(fract(V), 0.0);
+  F.z = 1.0 - F.x - F.y;
+  vec4 fragColor = vec4(0.0);
+  vec3 W;
+  if (F.z > 0.0) {
+    W = vec3(F.z, F.y, F.x);
+    W = pow(W, vec3(hexTilingTextureSampleCoefficientExponent));
+    W /= dot(W, vec3(1.0));
+    if (W.x > hexTilingLookupSkipThreshold) fragColor += hexTileSample(samp, I, U, Gx, Gy, meanColor) * W.x;
+    if (W.y > hexTilingLookupSkipThreshold) fragColor += hexTileSample(samp, I + vec2(0.0, 1.0), U, Gx, Gy, meanColor) * W.y;
+    if (W.z > hexTilingLookupSkipThreshold) fragColor += hexTileSample(samp, I + vec2(1.0, 0.0), U, Gx, Gy, meanColor) * W.z;
+  } else {
+    W = vec3(-F.z, 1.0 - F.y, 1.0 - F.x);
+    W = pow(W, vec3(hexTilingTextureSampleCoefficientExponent));
+    W /= dot(W, vec3(1.0));
+    if (W.x > hexTilingLookupSkipThreshold) fragColor += hexTileSample(samp, I + 1.0, U, Gx, Gy, meanColor) * W.x;
+    if (W.y > hexTilingLookupSkipThreshold) fragColor += hexTileSample(samp, I + vec2(1.0, 0.0), U, Gx, Gy, meanColor) * W.y;
+    if (W.z > hexTilingLookupSkipThreshold) fragColor += hexTileSample(samp, I + vec2(0.0, 1.0), U, Gx, Gy, meanColor) * W.z;
+  }
+  fragColor = hexTilingUseContrastCorrectedBlending ? meanColor + fragColor / length(W) : fragColor;
+  return clamp(rgb2srgb(fragColor), 0.0, 1.0);
+}
+vec4 sampleTerrainTex(sampler2D tex, vec2 mapUv) {
+  return textureNoTileNeyret(tex, mapUv);
+}
+vec4 blendTerrainLayer(vec4 low, vec4 high, float t, float edge, float span) {
+  float w = smoothstep(edge, edge + span, t);
+  return mix(low, high, w);
+}
+vec4 getTerrainColor(vec2 mapUv, float h) {
+  float blendH = clamp(h + (terrainNoise(mapUv * 0.12) - 0.5) * 0.14, 0.0, 1.0);
+  vec4 sand = sampleTerrainTex(uTexSand, mapUv);
+  vec4 grass = sampleTerrainTex(uTexGrass, mapUv);
+  vec4 stone = sampleTerrainTex(uTexStone, mapUv);
+  vec4 snow = sampleTerrainTex(uTexSnow, mapUv);
+  return blendTerrainLayer(
+    blendTerrainLayer(
+      blendTerrainLayer(sand, grass, blendH, 0.0, 0.40),
+      stone, blendH, 0.40, 0.35),
+    snow, blendH, 0.75, 0.25);
+}
+`;
+
+function updateTerrainTextureScale(scale = parseFloat(terrainTextureScaleInput.value)) {
+  terrainTextureScale = scale;
+  if (!terrainTextureSets) return;
+  const repeat = scale * (GRID_SIZE / TERRAIN_TEXTURE_REFERENCE_SIZE);
+  for (const key of ['sand', 'grass', 'stone', 'snow']) {
+    terrainTextureSets[key].color.repeat.set(repeat, repeat);
+  }
+  terrainTextureScaleVal.textContent = scale;
+}
+
+function applyTerrainTextureBlending(material, sets) {
+  material.map = sets.sand.color;
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTexSand = { value: sets.sand.color };
+    shader.uniforms.uTexGrass = { value: sets.grass.color };
+    shader.uniforms.uTexStone = { value: sets.stone.color };
+    shader.uniforms.uTexSnow = { value: sets.snow.color };
+    shader.uniforms.hexTilingUseContrastCorrectedBlending = { value: TERRAIN_HEX_TILING.useContrastCorrectedBlending };
+    shader.uniforms.hexTilingPatchScale = { value: TERRAIN_HEX_TILING.patchScale };
+    shader.uniforms.hexTilingLookupSkipThreshold = { value: TERRAIN_HEX_TILING.lookupSkipThreshold };
+    shader.uniforms.hexTilingTextureSampleCoefficientExponent = { value: TERRAIN_HEX_TILING.textureSampleCoefficientExponent };
+
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+attribute float heightNorm;
+varying float vHeightNorm;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+vHeightNorm = heightNorm;`);
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform sampler2D uTexSand, uTexGrass, uTexStone, uTexSnow;
+varying float vHeightNorm;
+${TERRAIN_BLEND_GLSL}`)
+      .replace('#include <map_fragment>', `#ifdef USE_MAP
+diffuseColor *= getTerrainColor(vMapUv, vHeightNorm);
+#endif`);
+  };
+  material.customProgramCacheKey = () => 'terrain-height-blend-hex-v1';
+  material.needsUpdate = true;
+}
+
+function writeTerrainHeightNorm(entry, heights) {
+  let minH = Infinity, maxH = -Infinity;
+  for (let i = 0; i < heights.length; i++) {
+    if (heights[i] < minH) minH = heights[i];
+    if (heights[i] > maxH) maxH = heights[i];
+  }
+  const range = maxH - minH || 1;
+  const attr = entry.mesh.geometry.attributes.heightNorm;
+  for (let i = 0; i < heights.length; i++) {
+    attr.array[i] = (heights[i] - minH) / range;
+  }
+  attr.needsUpdate = true;
+}
+
 function updateTerrain(entry) {
   if (!entry) return;
   const scale = parseFloat(terrainHeightInput.value);
@@ -908,6 +1129,7 @@ function updateTerrain(entry) {
   if (waterBorder > 0) {
     const half = GRID_SIZE / 2;
     const borderFrac = waterBorder / 100;
+    const cornerR = Math.min(borderFrac * 0.6, 0.45);
     let borderMinH = Infinity;
     for (let i = 0; i < pos.count; i++) {
       if (heights[i] < borderMinH) borderMinH = heights[i];
@@ -915,12 +1137,15 @@ function updateTerrain(entry) {
     for (let i = 0; i < pos.count; i++) {
       const dx = Math.abs(bp[i * 2]) / half;
       const dz = Math.abs(bp[i * 2 + 1]) / half;
-      const edgeDist = Math.max(dx, dz);
+      const flatDist = Math.min(Math.max(dx, dz), 1 - cornerR);
+      const qx = Math.max(dx - (1 - cornerR), 0);
+      const qz = Math.max(dz - (1 - cornerR), 0);
+      const edgeDist = (flatDist + Math.hypot(qx, qz)) / (1 - cornerR + cornerR * Math.SQRT2);
       const t = Math.max(0, (edgeDist - (1 - borderFrac)) / borderFrac);
       heights[i] = heights[i] * (1 - t) + borderMinH * t;
     }
   }
-  carveRivers(heights, pos.count);
+  writeTerrainHeightNorm(entry, heights);
   for (let i = 0; i < pos.count; i++) {
     arr[i * 3 + 1] = heights[i];
   }
@@ -938,6 +1163,7 @@ function updateTerrain(entry) {
   updateWater(entry);
   terrainHeightVal.textContent = scale;
   terrainRoughnessVal.textContent = Math.round(rough * 100);
+  scheduleTerrainForestRebuild();
 }
 
 function updateWater(entry) {
@@ -951,8 +1177,17 @@ function updateWater(entry) {
 }
 
 // ---------- Terrain noise generation ----------
+function tectonicHeightMod(x, z) {
+  if (crustFactor === 0 && tectonicFactor === 0) return 0;
+  const crustScale = hillParams.spacing * 6;
+  const crust = pn.fbm(x / crustScale, z / crustScale, 3, 2.5, 0.5);
+  const tectonic = 0.2 / (Math.abs(crust) + 0.1) - 0.95;
+  return (crust * crustFactor + tectonic * tectonicFactor) * 20;
+}
+
 function noiseHeight(x, z) {
-  if (mbRadius > 0) {
+  let h;
+  if (mountainBorderMode) {
     const half = GRID_SIZE / 2;
     const dist = Math.sqrt(x * x + z * z) / half;
     const mbRadiusNorm = mbRadius / 100;
@@ -964,62 +1199,23 @@ function noiseHeight(x, z) {
     const mtnNoise = pn.fbm(x * 0.012, z * 0.012, noiseOctaves, noiseLacunarity, noisePersistence);
     const detail = hillParams.detail !== 0 ? pn.noise(x * 0.03, z * 0.03) * 10 * hillParams.detail : 0;
     const dune = hillParams.dunes !== 0 ? pn.noise(x * 0.006, z * 0.006) * 20 * hillParams.dunes : 0;
-    let h = ringWeight * (0.5 + mtnNoise * 0.5) * (mbHeight / 100) * 100 + detail + dune;
-    return h * hillParams.height * hillParams.rolling;
+    h = (ringWeight * (0.5 + mtnNoise * 0.5) * (mbHeight / 100) * 100 + detail + dune) * hillParams.height * hillParams.rolling;
+  } else {
+    const baseScale = hillParams.spacing * 3 * (GRID_SIZE / 1000);
+    const sx = baseScale / Math.max(0.01, hillParams.freqX);
+    const sz = baseScale / Math.max(0.01, hillParams.freqZ);
+    let nx = x / sx, nz = z / sz;
+    if (warpStrength > 0) {
+      const w = warpStrength / baseScale;
+      nx += pn.fbm(x * 0.005 + 100, z * 0.005, 2, 2, 0.5) * w;
+      nz += pn.fbm(x * 0.005 + 200, z * 0.005 + 100, 2, 2, 0.5) * w;
+    }
+    const n = pn.fbm(nx, nz, noiseOctaves, noiseLacunarity, noisePersistence);
+    const detailNoise = hillParams.detail !== 0 ? pn.noise(x * 0.02, z * 0.02) * 0.2 * hillParams.detail : 0;
+    const duneNoise = hillParams.dunes !== 0 ? pn.noise(x * 0.004, z * 0.004) * 0.4 * hillParams.dunes : 0;
+    h = (n + detailNoise + duneNoise) * hillParams.height * 120 * hillParams.rolling;
   }
-  const baseScale = hillParams.spacing * 3 * (GRID_SIZE / 1000);
-  const sx = baseScale / Math.max(0.01, hillParams.freqX);
-  const sz = baseScale / Math.max(0.01, hillParams.freqZ);
-  let nx = x / sx, nz = z / sz;
-  if (warpStrength > 0) {
-    const w = warpStrength / baseScale;
-    nx += pn.fbm(x * 0.005 + 100, z * 0.005, 2, 2, 0.5) * w;
-    nz += pn.fbm(x * 0.005 + 200, z * 0.005 + 100, 2, 2, 0.5) * w;
-  }
-  const n = pn.fbm(nx, nz, noiseOctaves, noiseLacunarity, noisePersistence);
-  const detailNoise = hillParams.detail !== 0 ? pn.noise(x * 0.02, z * 0.02) * 0.2 * hillParams.detail : 0;
-  const duneNoise = hillParams.dunes !== 0 ? pn.noise(x * 0.004, z * 0.004) * 0.4 * hillParams.dunes : 0;
-  const base = (n + detailNoise + duneNoise) * hillParams.height * 120 * hillParams.rolling;
-  let tectonicMod = 0;
-  if (crustFactor !== 0 || tectonicFactor !== 0) {
-    const crustScale = hillParams.spacing * 6;
-    const crust = pn.fbm(x / crustScale, z / crustScale, 3, 2.5, 0.5);
-    const tectonic = 0.2 / (Math.abs(crust) + 0.1) - 0.95;
-    tectonicMod = (crust * crustFactor + tectonic * tectonicFactor) * 20;
-  }
-  return base + tectonicMod;
-}
-
-function seededRandom(seed) { let s = (seed >>> 0) || 1; return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; }
-
-function carveRivers(heights, count) {
-  if (riverStrength === 0) return;
-  const gridSize = Math.sqrt(count) | 0; const segs = gridSize - 1;
-  const flow = new Float32Array(count); const downhill = new Int32Array(count);
-  for (let i = 0; i < count; i++) {
-    const row = Math.floor(i / gridSize); const col = i % gridSize;
-    let bestH = heights[i], bestIdx = -1;
-    if (row > 0) { const j = i - gridSize; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
-    if (row < segs) { const j = i + gridSize; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
-    if (col > 0) { const j = i - 1; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
-    if (col < segs) { const j = i + 1; if (heights[j] < bestH) { bestH = heights[j]; bestIdx = j; } }
-    downhill[i] = bestIdx;
-  }
-  let minH = Infinity, maxH = -Infinity;
-  for (let i = 0; i < count; i++) { if (heights[i] < minH) minH = heights[i]; if (heights[i] > maxH) maxH = heights[i]; }
-  const threshold = minH + (maxH - minH) * 0.65;
-  const candidates = [];
-  for (let i = 0; i < count; i++) { if (heights[i] > threshold) candidates.push(i); }
-  if (candidates.length < 5) return;
-  const numRivers = Math.max(1, Math.floor(riverStrength * 0.4 + 1));
-  const depthScale = riverStrength / 100;
-  const rand = seededRandom(noiseSeed + 7919);
-  for (let r = 0; r < Math.min(numRivers, candidates.length); r++) {
-    let idx = candidates[Math.floor(rand() * candidates.length)];
-    let steps = 0;
-    while (idx >= 0 && steps < 5000) { flow[idx] += 1; idx = downhill[idx]; steps++; }
-  }
-  for (let i = 0; i < count; i++) { if (flow[i] > 0) heights[i] -= Math.min(30, 0.5 + flow[i] * 0.6) * depthScale; }
+  return h + tectonicHeightMod(x, z);
 }
 
 let terrainUpdatePending = false;
@@ -1146,7 +1342,7 @@ function generateForestPlacements(count, radius, minSpacing, rng) {
     return true;
   }
 
-  const maxAttempts = Math.max(80, Math.ceil(Math.sqrt(count) * 10));
+  const maxAttempts = Math.max(120, count * 12);
   for (let i = 0; i < count; i++) {
     let placedOne = false;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -1180,7 +1376,7 @@ function buildInstancedForest(gltf, options, templates = null) {
     templates = templateNodes.map(bakeTreeTemplate);
   }
   const rng = mulberry32(options.seed ?? 1);
-  const placements = generateForestPlacements(
+  const placements = options.placements ?? generateForestPlacements(
     options.count ?? 24,
     options.radius ?? 90,
     options.minSpacing ?? 6,
@@ -1190,6 +1386,8 @@ function buildInstancedForest(gltf, options, templates = null) {
 
   const rotXMin = options.rotXMin ?? 0;
   const rotXMax = options.rotXMax ?? Math.PI * 2;
+  const scaleMin = options.scaleMin ?? 0.85;
+  const scaleMax = options.scaleMax ?? 1.15;
   const forest = new THREE.Group();
   const instancedMeshes = [];
   const typeCount = templates.length;
@@ -1197,9 +1395,9 @@ function buildInstancedForest(gltf, options, templates = null) {
 
   for (const point of placements) {
     const typeIdx = Math.floor(rng() * typeCount);
-    const scale = THREE.MathUtils.lerp(0.85, 1.15, rng());
+    const scale = THREE.MathUtils.lerp(scaleMin, scaleMax, rng());
     const spin = THREE.MathUtils.lerp(rotXMin, rotXMax, rng());
-    buckets[typeIdx].push({ x: point.x, z: point.z, scale, spin });
+    buckets[typeIdx].push({ x: point.x, y: point.y, z: point.z, scale, spin });
   }
 
   for (let i = 0; i < typeCount; i++) {
@@ -1215,7 +1413,7 @@ function buildInstancedForest(gltf, options, templates = null) {
 
       for (let j = 0; j < instances.length; j++) {
         const inst = instances[j];
-        _dummy.position.set(inst.x, 0, inst.z);
+        _dummy.position.set(inst.x, inst.y ?? 0, inst.z);
         _dummy.rotation.set(0, inst.spin, 0);
         _dummy.scale.setScalar(inst.scale);
         _dummy.updateMatrix();
@@ -1246,6 +1444,534 @@ function extractTemplates(gltf) {
   const templateNodes = layout.children.filter(hasMesh);
   if (!templateNodes.length) throw new Error('No templates found in GLB');
   return templateNodes.map(bakeTreeTemplate);
+}
+
+function extractPineTemplates(gltf) {
+  repairMissingTrunks(gltf.scene);
+  const layout = findLayoutRoot(gltf.scene);
+  const templateNodes = layout.children
+    .filter(hasMesh)
+    .filter((node) => /^pine[12]$/i.test(node.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (!templateNodes.length) throw new Error('No pine1/pine2 templates found');
+  return templateNodes.map(bakeTreeTemplate);
+}
+
+function loadPineTemplates() {
+  if (!pineTemplatesPromise) {
+    pineTemplatesPromise = new Promise((resolve, reject) => {
+      loader.load(PINE_PACK_URL, (gltf) => {
+        try {
+          resolve(extractPineTemplates(gltf));
+        } catch (err) {
+          reject(err);
+        }
+      }, undefined, reject);
+    });
+  }
+  return pineTemplatesPromise;
+}
+
+function terrainSmoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function terrainGrassWeight(heightNorm) {
+  const sandToGrass = terrainSmoothstep(0.0, 0.40, heightNorm);
+  const grassToStone = terrainSmoothstep(0.40, 0.75, heightNorm);
+  return sandToGrass * (1 - grassToStone);
+}
+
+function isGrassBiome(heightNorm) {
+  return terrainGrassWeight(heightNorm) >= TERRAIN_FOREST_GRASS_WEIGHT_MIN;
+}
+
+function sampleTerrainSurface(entry, x, z) {
+  if (!entry?.mesh?.geometry) return null;
+  const pos = entry.mesh.geometry.attributes.position;
+  const heightNormAttr = entry.mesh.geometry.attributes.heightNorm;
+  const segments = entry._gridSegments;
+  if (!segments || !heightNormAttr) return null;
+
+  const half = GRID_SIZE / 2;
+  const lx = x - entry.mesh.position.x;
+  const lz = z - entry.mesh.position.z;
+  const gx = (lx + half) / GRID_SIZE;
+  const gz = (lz + half) / GRID_SIZE;
+  if (gx < 0 || gx > 1 || gz < 0 || gz > 1) return null;
+
+  const fx = gx * segments;
+  const fz = gz * segments;
+  const ix = Math.min(Math.floor(fx), segments - 1);
+  const iz = Math.min(Math.floor(fz), segments - 1);
+  const tx = fx - ix;
+  const tz = fz - iz;
+  const stride = segments + 1;
+  const idx = (col, row) => row * stride + col;
+
+  const i00 = idx(ix, iz);
+  const i10 = idx(ix + 1, iz);
+  const i01 = idx(ix, iz + 1);
+  const i11 = idx(ix + 1, iz + 1);
+
+  const sampleY = (i) => pos.getY(i);
+  const sampleH = (i) => heightNormAttr.array[i];
+  const y = THREE.MathUtils.lerp(
+    THREE.MathUtils.lerp(sampleY(i00), sampleY(i10), tx),
+    THREE.MathUtils.lerp(sampleY(i01), sampleY(i11), tx),
+    tz,
+  );
+  const heightNorm = THREE.MathUtils.lerp(
+    THREE.MathUtils.lerp(sampleH(i00), sampleH(i10), tx),
+    THREE.MathUtils.lerp(sampleH(i01), sampleH(i11), tx),
+    tz,
+  );
+  return { y: y + entry.mesh.position.y, heightNorm };
+}
+
+function bakeTreeProxyFromTemplate(bakedTemplate, typeIdx) {
+  const box = new THREE.Box3();
+  for (const part of bakedTemplate.parts) {
+    if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
+    box.union(part.geometry.boundingBox);
+  }
+  const size = box.getSize(_v);
+  const h = Math.max(size.y, 0.001);
+  const r = Math.max(size.x, size.z) * 0.5;
+  const trunkGeo = new THREE.CylinderGeometry(r * 0.12, r * 0.18, h * 0.28, 5);
+  trunkGeo.translate(0, h * 0.14, 0);
+  const foliageGeo = new THREE.ConeGeometry(r * 0.85, h * 0.72, 6);
+  foliageGeo.translate(0, h * 0.28 + h * 0.36, 0);
+  const geometry = mergeGeometries([trunkGeo, foliageGeo]);
+  trunkGeo.dispose();
+  foliageGeo.dispose();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+
+  const colors = [0x2d5a27, 0x3a6b32];
+  const material = new THREE.MeshStandardMaterial({
+    color: colors[typeIdx % colors.length],
+    roughness: 0.92,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  return { name: `${bakedTemplate.name}_proxy`, parts: [{ geometry, material }] };
+}
+
+function loadPineLodTemplates() {
+  return loadPineTemplates().then((fullTemplates) => {
+    if (!pineProxyTemplates) {
+      pineProxyTemplates = fullTemplates.map((template, i) => bakeTreeProxyFromTemplate(template, i));
+    }
+    return { fullTemplates, proxyTemplates: pineProxyTemplates };
+  });
+}
+
+function terrainForestChunkKey(x, z) {
+  const cx = Math.floor(x / TERRAIN_FOREST_CHUNK_SIZE);
+  const cz = Math.floor(z / TERRAIN_FOREST_CHUNK_SIZE);
+  return `${cx},${cz}`;
+}
+
+function addTreeToChunkBin(chunkBins, tree) {
+  const key = terrainForestChunkKey(tree.x, tree.z);
+  if (!chunkBins.has(key)) chunkBins.set(key, []);
+  chunkBins.get(key).push(tree);
+}
+
+function buildTerrainForestChunkGroup(trees, renderTemplates) {
+  const group = new THREE.Group();
+  const typeCount = renderTemplates.length;
+  const buckets = Array.from({ length: typeCount }, () => []);
+
+  for (const tree of trees) {
+    buckets[tree.type % typeCount].push(tree);
+  }
+
+  const meshes = [];
+  for (let ti = 0; ti < typeCount; ti++) {
+    const instances = buckets[ti];
+    if (!instances.length) continue;
+    const { parts } = renderTemplates[ti];
+    for (const part of parts) {
+      const mesh = new THREE.InstancedMesh(part.geometry, part.material, instances.length);
+      mesh.frustumCulled = false;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      const arr = mesh.instanceMatrix.array;
+      for (let j = 0; j < instances.length; j++) {
+        const inst = instances[j];
+        _dummy.position.set(inst.x, inst.y, inst.z);
+        _dummy.rotation.set(0, inst.spin, 0);
+        _dummy.scale.setScalar(inst.scale);
+        _dummy.updateMatrix();
+        _dummy.matrix.toArray(arr, j * 16);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      group.add(mesh);
+      meshes.push(mesh);
+    }
+  }
+
+  group.userData.instancedMeshes = meshes;
+  return group;
+}
+
+function disposeTerrainForestChunkGroup(group, disposeSharedGeometry = false) {
+  group.traverse((child) => {
+    if (!child.isInstancedMesh) return;
+    if (disposeSharedGeometry) child.geometry?.dispose?.();
+    child.material?.dispose?.();
+    child.dispose();
+  });
+}
+
+function disposeTerrainForestSystem(system) {
+  if (!system) return;
+  for (const chunk of system.builtChunks.values()) {
+    disposeTerrainForestChunkGroup(chunk.proxyGroup, false);
+    if (chunk.fullGroup) disposeTerrainForestChunkGroup(chunk.fullGroup, false);
+  }
+  system.root.removeFromParent();
+}
+
+function rebuildTerrainForestInstancedMeshes(system) {
+  system.instancedMeshes = [];
+  for (const chunk of system.builtChunks.values()) {
+    const active = chunk.lod === 'full' && chunk.fullGroup ? chunk.fullGroup : chunk.proxyGroup;
+    if (active?.userData.instancedMeshes) {
+      system.instancedMeshes.push(...active.userData.instancedMeshes);
+    }
+  }
+}
+
+function swapTerrainForestChunkLod(system, chunk, lod) {
+  if (chunk.lod === lod) return;
+
+  if (lod === 'full') {
+    if (!chunk.fullGroup) {
+      chunk.fullGroup = buildTerrainForestChunkGroup(chunk.trees, system.fullTemplates);
+      prepareMeshes(chunk.fullGroup);
+      chunk.fullGroup.visible = false;
+      system.root.add(chunk.fullGroup);
+    }
+    chunk.proxyGroup.visible = false;
+    chunk.fullGroup.visible = true;
+    chunk.group = chunk.fullGroup;
+  } else {
+    if (chunk.fullGroup) chunk.fullGroup.visible = false;
+    chunk.proxyGroup.visible = true;
+    chunk.group = chunk.proxyGroup;
+  }
+  chunk.lod = lod;
+}
+
+function terrainForestChunkCenter(key) {
+  const [cx, cz] = key.split(',').map(Number);
+  return {
+    x: (cx + 0.5) * TERRAIN_FOREST_CHUNK_SIZE,
+    z: (cz + 0.5) * TERRAIN_FOREST_CHUNK_SIZE,
+  };
+}
+
+async function buildAllTerrainForestChunksAsync(system, generation) {
+  const keys = [...system.chunkBins.keys()];
+  let index = 0;
+
+  await new Promise((resolve) => {
+    const step = () => {
+      if (generation !== terrainForestBuildGeneration) {
+        resolve(false);
+        return;
+      }
+      const start = performance.now();
+      while (index < keys.length && performance.now() - start < TERRAIN_FOREST_BUILD_BATCH_MS) {
+        const key = keys[index];
+        const trees = system.chunkBins.get(key);
+        const proxyGroup = buildTerrainForestChunkGroup(trees, system.proxyTemplates);
+        system.builtChunks.set(key, {
+          key,
+          trees,
+          lod: 'proxy',
+          proxyGroup,
+          fullGroup: null,
+          group: proxyGroup,
+        });
+        system.root.add(proxyGroup);
+        index++;
+      }
+      if (terrainForestCountVal) {
+        terrainForestCountVal.textContent = `Building… ${index}/${keys.length} chunks`;
+      }
+      if (index >= keys.length) {
+        resolve(true);
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    step();
+  });
+
+  return generation === terrainForestBuildGeneration;
+}
+
+function updateTerrainForestLod(entry) {
+  const system = entry.terrainForestSystem;
+  if (!system?.builtChunks.size) return;
+
+  _forestCamLocal.copy(camera.position);
+  entry.group.worldToLocal(_forestCamLocal);
+
+  for (const chunk of system.builtChunks.values()) {
+    const center = terrainForestChunkCenter(chunk.key);
+    const dist = Math.hypot(_forestCamLocal.x - center.x, _forestCamLocal.z - center.z);
+    if (dist < TERRAIN_FOREST_LOD_FULL_DISTANCE && chunk.lod !== 'full') {
+      swapTerrainForestChunkLod(system, chunk, 'full');
+    } else if (
+      dist > TERRAIN_FOREST_LOD_FULL_DISTANCE + TERRAIN_FOREST_LOD_HYSTERESIS
+      && chunk.lod !== 'proxy'
+    ) {
+      swapTerrainForestChunkLod(system, chunk, 'proxy');
+    }
+  }
+
+  rebuildTerrainForestInstancedMeshes(system);
+}
+
+function maybeUpdateTerrainForestLod(entry) {
+  if (!entry?.terrainForestSystem?.builtChunks.size) return;
+  terrainForestLodTick++;
+  if (terrainForestLodTick % 3 !== 0) return;
+
+  _forestCamLocal.copy(camera.position);
+  entry.group.worldToLocal(_forestCamLocal);
+  if (_forestCamLocal.distanceToSquared(_forestCamLast) < 900) return;
+  _forestCamLast.copy(_forestCamLocal);
+  updateTerrainForestLod(entry);
+}
+
+function terrainForestHasFullLod(entry) {
+  const system = entry?.terrainForestSystem;
+  if (!system) return false;
+  for (const chunk of system.builtChunks.values()) {
+    if (chunk.lod === 'full') return true;
+  }
+  return false;
+}
+
+function getForestDensityNoise(seed) {
+  if (!forestDensityNoise) forestDensityNoise = new PerlinNoise(seed + 42069);
+  else forestDensityNoise.setSeed(seed + 42069);
+  return forestDensityNoise;
+}
+
+function forestRegionDensity(x, z, seed) {
+  const fn = getForestDensityNoise(seed);
+  const inv = 1 / Math.max(GRID_SIZE, 1);
+  const region = fn.fbm(x * inv * 2.1 + seed * 0.017, z * inv * 2.1 + seed * 0.031, 3, 2.1, 0.52);
+  const clump = fn.fbm(x * inv * 15 + 90, z * inv * 15 + 140, 3, 2.4, 0.42);
+  const regionNorm = region * 0.5 + 0.5;
+  const clumpNorm = clump * 0.5 + 0.5;
+  if (regionNorm < TERRAIN_FOREST_BARE_CUTOFF) return 0;
+  const regionWeight = terrainSmoothstep(TERRAIN_FOREST_BARE_CUTOFF, 0.72, regionNorm);
+  const clumpWeight = terrainSmoothstep(0.32, 0.94, clumpNorm);
+  const clumpSharp = clumpWeight * clumpWeight * clumpWeight;
+  return regionWeight * (0.04 + clumpSharp * 0.96);
+}
+
+async function generateMegaForestPlacementsAsync(entry, targetCount, seed, generation) {
+  const waterY = entry.waterMesh?.position.y ?? 0;
+  const half = GRID_SIZE * 0.47;
+  const area = (half * 2) ** 2;
+  const spacing = Math.sqrt(area / Math.max(1, targetCount * 2.4));
+  const chunkBins = new Map();
+  let count = 0;
+
+  const tryPlaceCore = (x, z, cellRng) => {
+    const sample = sampleTerrainSurface(entry, x, z);
+    if (!sample || !isGrassBiome(sample.heightNorm)) return false;
+    if (sample.y <= waterY + 0.5) return false;
+    addTreeToChunkBin(chunkBins, {
+      x,
+      y: sample.y,
+      z,
+      scale: THREE.MathUtils.lerp(TERRAIN_FOREST_SCALE_MIN, TERRAIN_FOREST_SCALE_MAX, cellRng()),
+      spin: cellRng() * Math.PI * 2,
+      type: Math.floor(cellRng() * 2),
+    });
+    count++;
+    return true;
+  };
+
+  const tryPlace = (x, z, cellRng) => {
+    const density = forestRegionDensity(x, z, seed);
+    if (density <= 0 || cellRng() > Math.min(1, density * 0.92)) return false;
+    if (!tryPlaceCore(x, z, cellRng)) return false;
+
+    if (density > 0.4 && count < targetCount) {
+      const extraCount = Math.floor(cellRng() * (2 + density * 11));
+      const jitter = spacing * (density > 0.72 ? 0.2 : 0.26);
+      for (let e = 0; e < extraCount && count < targetCount; e++) {
+        const jx = x + (cellRng() - 0.5) * jitter;
+        const jz = z + (cellRng() - 0.5) * jitter;
+        const clumpDensity = forestRegionDensity(jx, jz, seed);
+        if (clumpDensity < density * 0.45) continue;
+        tryPlaceCore(jx, jz, cellRng);
+      }
+    }
+    return true;
+  };
+
+  const cols = Math.ceil((half * 2) / spacing);
+  const rows = cols;
+  let ix = 0;
+  let iz = 0;
+
+  await new Promise((resolve) => {
+    const step = () => {
+      if (generation !== terrainForestBuildGeneration) {
+        resolve(false);
+        return;
+      }
+      const start = performance.now();
+      while (iz < rows && count < targetCount && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS) {
+        const cellRng = mulberry32(seed + ix * 73856093 + iz * 19349663);
+        const x = -half + (ix + cellRng()) * spacing;
+        const z = -half + (iz + cellRng()) * spacing;
+        tryPlace(x, z, cellRng);
+        ix++;
+        if (ix >= cols) {
+          ix = 0;
+          iz++;
+        }
+      }
+      if (terrainForestCountVal) {
+        terrainForestCountVal.textContent = `Generating… ${count.toLocaleString()}`;
+      }
+      if (count >= targetCount || iz >= rows) {
+        resolve(true);
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    step();
+  });
+
+  if (generation !== terrainForestBuildGeneration) return null;
+
+  if (count < targetCount) {
+    const fillRng = mulberry32(seed + 99991);
+    let fillAttempts = 0;
+    const fillMax = Math.max(targetCount * 20, 30000);
+    await new Promise((resolve) => {
+      const step = () => {
+        if (generation !== terrainForestBuildGeneration) {
+          resolve();
+          return;
+        }
+        const start = performance.now();
+        while (
+          count < targetCount
+          && fillAttempts < fillMax
+          && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS
+        ) {
+          fillAttempts++;
+          const x = (fillRng() * 2 - 1) * half;
+          const z = (fillRng() * 2 - 1) * half;
+          const density = forestRegionDensity(x, z, seed);
+          if (density <= 0.28 || fillRng() > density * 0.9) continue;
+          tryPlace(x, z, fillRng);
+        }
+        if (terrainForestCountVal) {
+          terrainForestCountVal.textContent = `Generating… ${count.toLocaleString()}`;
+        }
+        if (count >= targetCount || fillAttempts >= fillMax) {
+          resolve();
+          return;
+        }
+        requestAnimationFrame(step);
+      };
+      step();
+    });
+  }
+
+  if (generation !== terrainForestBuildGeneration) return null;
+  return { chunkBins, count };
+}
+
+function clearTerrainForest(entry) {
+  if (entry?.terrainForestSystem) {
+    disposeTerrainForestSystem(entry.terrainForestSystem);
+    entry.terrainForestSystem = null;
+    entry.terrainForestRoot = null;
+  } else if (entry?.terrainForestRoot) {
+    clearInstancedForest(entry.terrainForestRoot);
+    entry.group.remove(entry.terrainForestRoot);
+    entry.terrainForestRoot = null;
+  }
+  entry.terrainForestMeshes = null;
+  entry.terrainForestTreeCount = 0;
+  if (terrainForestCountVal) terrainForestCountVal.textContent = '0';
+}
+
+async function rebuildTerrainForest(entry) {
+  if (!entry?.isTerrain) return;
+  if (!terrainForestEnabled) {
+    terrainForestBuildGeneration++;
+    clearTerrainForest(entry);
+    return;
+  }
+
+  terrainForestBuildGeneration++;
+  const generation = terrainForestBuildGeneration;
+  clearTerrainForest(entry);
+
+  const { fullTemplates, proxyTemplates } = await loadPineLodTemplates();
+  if (generation !== terrainForestBuildGeneration) return;
+
+  const result = await generateMegaForestPlacementsAsync(
+    entry,
+    terrainForestTreeCount,
+    terrainForestSeed,
+    generation,
+  );
+  if (!result || generation !== terrainForestBuildGeneration) return;
+
+  const system = {
+    root: new THREE.Group(),
+    chunkBins: result.chunkBins,
+    builtChunks: new Map(),
+    fullTemplates,
+    proxyTemplates,
+    instancedMeshes: [],
+    totalCount: result.count,
+  };
+
+  entry.terrainForestSystem = system;
+  entry.terrainForestRoot = system.root;
+  entry.terrainForestMeshes = system.instancedMeshes;
+  entry.terrainForestTreeCount = result.count;
+  entry.group.add(system.root);
+
+  const built = await buildAllTerrainForestChunksAsync(system, generation);
+  if (!built || generation !== terrainForestBuildGeneration) return;
+
+  rebuildTerrainForestInstancedMeshes(system);
+  _forestCamLast.set(Number.NaN, Number.NaN, Number.NaN);
+  updateTerrainForestLod(entry);
+
+  if (terrainForestCountVal) {
+    terrainForestCountVal.textContent = `${result.count.toLocaleString()} trees`;
+  }
+}
+
+function scheduleTerrainForestRebuild() {
+  if (!terrainEntry) return;
+  clearTimeout(terrainForestRebuildTimer);
+  terrainForestRebuildTimer = setTimeout(() => {
+    rebuildTerrainForest(terrainEntry).catch((err) => console.error('Terrain forest rebuild failed', err));
+  }, 350);
 }
 
 function rebuildFoliageForest(entry) {
@@ -1387,12 +2113,17 @@ function frameModel(entry) {
   const dist = Math.max(radius * 2.8, 40);
   const maxDist = Math.max(dist * 3, GRID_SIZE * 3);
 
-  camera.near = Math.max(0.1, radius * 0.2);
+  if (entry.isTerrain) {
+    camera.near = 0.1;
+    controls.minDistance = 1.5;
+  } else {
+    camera.near = Math.max(0.05, radius * 0.02);
+    controls.minDistance = Math.max(0.5, radius * 0.08);
+  }
   camera.far = Math.max(20000, maxDist * 3);
   camera.updateProjectionMatrix();
   controls.target.set(0, height * 0.35, 0);
   camera.position.set(dist * 0.65, dist * 0.45, dist);
-  controls.minDistance = radius * 0.4;
   controls.maxDistance = maxDist;
   controls.update();
 }
@@ -1445,37 +2176,23 @@ async function loadHeightmapImage(def) {
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 
-  const cSand = new THREE.Color(0xd4b48c);
-  const cGrass = new THREE.Color(0x5a8c4a);
-  const cStone = new THREE.Color(0x8a8a8a);
-  const cSnow = new THREE.Color(0xececec);
-  const colors = new Float32Array(pos.count * 3);
-  const tmp = new THREE.Color();
+  const heightNorm = new Float32Array(pos.count);
   for (let i = 0; i < pos.count; i++) {
-    const t = (heights[i] - minH) / range;
-    if (t < 0.3) {
-      tmp.copy(cSand).lerp(cGrass, t / 0.3);
-    } else if (t < 0.65) {
-      tmp.copy(cGrass).lerp(cStone, (t - 0.3) / 0.35);
-    } else {
-      tmp.copy(cStone).lerp(cSnow, (t - 0.65) / 0.35);
-    }
-    colors[i * 3] = tmp.r;
-    colors[i * 3 + 1] = tmp.g;
-    colors[i * 3 + 2] = tmp.b;
+    heightNorm[i] = (heights[i] - minH) / range;
   }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('heightNorm', new THREE.BufferAttribute(heightNorm, 1));
 
+  const textureSets = await loadTerrainTextureSets();
   const material = new THREE.MeshStandardMaterial({
-    vertexColors: true,
     roughness: 0.85,
     metalness: 0.05,
     side: THREE.DoubleSide,
     flatShading: false,
     polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
   });
+  applyTerrainTextureBlending(material, textureSets);
 
   const mesh = new THREE.Mesh(geometry, material);
   const box = new THREE.Box3().setFromObject(mesh);
@@ -1492,6 +2209,7 @@ async function loadHeightmapImage(def) {
     roughness: 0.1,
     metalness: 0.05,
     side: THREE.DoubleSide,
+    depthWrite: false,
     envMapIntensity: 0.4,
   });
   const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE), waterMat);
@@ -1521,6 +2239,7 @@ async function loadHeightmapImage(def) {
     waterMesh,
     waterMat,
     heightScale,
+    _gridSegments: segments,
     _normalizedHeights: new Float32Array(pos.count),
     _basePositions: basePos,
   };
@@ -1780,6 +2499,7 @@ function setActiveEntry(entry) {
       terrainEntry = entry;
       updateTerrain(entry);
       frameModel(entry);
+      scheduleTerrainForestRebuild();
     }
   } else if (entry.isSkybox) {
     if (changed) {
@@ -1791,7 +2511,7 @@ function setActiveEntry(entry) {
       scene.fog = null;
       controls.target.set(0, 60, 0);
       camera.position.set(120, 60, 200);
-      controls.minDistance = 10;
+      controls.minDistance = 2;
       controls.maxDistance = 5000;
       controls.maxPolarAngle = Math.PI * 0.49;
       controls.update();
@@ -1865,6 +2585,7 @@ async function init() {
     // Terrain slider bindings
     terrainHeightInput.addEventListener('input', () => { if (terrainEntry) scheduleTerrainUpdate(); });
     terrainRoughnessInput.addEventListener('input', () => { if (terrainEntry) { terrainEntry.material.roughness = parseFloat(terrainRoughnessInput.value) / 100; terrainRoughnessVal.textContent = terrainRoughnessInput.value; } });
+    terrainTextureScaleInput.addEventListener('input', () => updateTerrainTextureScale());
     terrainWaterLevelInput.addEventListener('input', () => { if (terrainEntry) updateWater(terrainEntry); });
     terrainWaterOpacityInput.addEventListener('input', () => { if (terrainEntry) updateWater(terrainEntry); });
     (function() {
@@ -1872,6 +2593,21 @@ async function init() {
       const val = document.getElementById('waterBorderVal');
       input.addEventListener('input', () => { waterBorder = Number(input.value); val.textContent = waterBorder; if (terrainEntry) scheduleTerrainUpdate(); });
     })();
+
+    terrainForestEnabledInput.addEventListener('change', () => {
+      terrainForestEnabled = terrainForestEnabledInput.checked;
+      scheduleTerrainForestRebuild();
+    });
+    terrainForestTreeCountInput.addEventListener('input', () => {
+      terrainForestTreeCount = Number(terrainForestTreeCountInput.value);
+      terrainForestTreeCountVal.textContent = terrainForestTreeCount.toLocaleString();
+      scheduleTerrainForestRebuild();
+    });
+    terrainForestSeedInput.addEventListener('input', () => {
+      terrainForestSeed = Number(terrainForestSeedInput.value);
+      terrainForestSeedVal.textContent = terrainForestSeed;
+      scheduleTerrainForestRebuild();
+    });
 
     // Noise
     function bindNoise(id, valId, parse, fmt) {
@@ -1896,7 +2632,6 @@ async function init() {
       input.addEventListener('input', () => { hillParams[key] = parse(Number(input.value)); val.textContent = fmt(hillParams[key]); if (terrainEntry) scheduleTerrainUpdate(); });
     }
     bindHill('hillHeight', 'hillHeightVal', 'height', v => v / 100, v => pct(v));
-    bindHill('hillSpacing', 'hillSpacingVal', 'spacing', v => v, v => v);
     bindHill('hillRolling', 'hillRollingVal', 'rolling', v => v / 100, v => pct(v));
     bindHill('hillDunes', 'hillDunesVal', 'dunes', v => v / 100, v => pct(v));
     bindHill('hillDetail', 'hillDetailVal', 'detail', v => v / 100, v => pct(v));
@@ -1932,17 +2667,15 @@ async function init() {
       input.addEventListener('input', () => { tectonicFactor = Number(input.value) / 10; val.textContent = tectonicFactor.toFixed(1); if (terrainEntry) scheduleTerrainUpdate(); });
     })();
 
+    document.getElementById('mountainBorderMode').addEventListener('change', (e) => {
+      mountainBorderMode = e.target.checked;
+      if (terrainEntry) scheduleTerrainUpdate();
+    });
+
     bindNoise('mbRadius', 'mbRadiusVal', v => { mbRadius = v; return v; }, v => `${v}`);
     bindNoise('mbWidth', 'mbWidthVal', v => { mbWidth = v; return v; }, v => `${v}`);
     bindNoise('mbHeight', 'mbHeightVal', v => { mbHeight = v; return v; }, v => (v / 100).toFixed(2));
     bindNoise('mbIrregularity', 'mbIrregularityVal', v => { mbIrregularity = v; return v; }, v => (v / 100).toFixed(2));
-
-    // Rivers
-    (function() {
-      const input = document.getElementById('riverStrength');
-      const val = document.getElementById('riverStrengthVal');
-      input.addEventListener('input', () => { riverStrength = Number(input.value); val.textContent = riverStrength; if (terrainEntry) scheduleTerrainUpdate(); });
-    })();
 
     function bindSkySlider(id, valId, key, fmt, rebake) {
       const input = document.getElementById(id);
@@ -1985,8 +2718,11 @@ function animate() {
   if (activeEntry?.isCharacter) {
     updateGameplay(activeEntry, delta);
     followCameraChar(activeEntry);
-  } else if (activeEntry?.isForest) {
-    windUniforms.uTime.value = skyAnimTime;
+  } else if (activeEntry?.isForest || activeEntry?.isTerrain) {
+    if (activeEntry?.isTerrain) maybeUpdateTerrainForestLod(activeEntry);
+    if (activeEntry?.isForest || terrainForestHasFullLod(activeEntry)) {
+      windUniforms.uTime.value = skyAnimTime;
+    }
   } else if (activeEntry?.isSkybox) {
     skyVisUniforms.time.value = skyAnimTime;
   }
