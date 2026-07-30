@@ -41,19 +41,23 @@ const WALK_SPEED = 120;
 const ROLL_SPEED = 260;
 const ROTATION_LERP = 10;
 const TERRAIN_SIZE = 950000;
-const GRID_SIZE = TERRAIN_SIZE;
 const HEIGHT_SCALE = 25000;
 const FLOOR_BOUND = TERRAIN_SIZE * 0.48 - 20;
 const SKY_SCALE = 10000;
-const CAMERA_MAX_DISTANCE = TERRAIN_SIZE * 3;
+const SKY_ANIM_SPEED = 3;
+const JUMP_VELOCITY = 42;
+const JUMP_GRAVITY = 78;
 
 const FOREST_REF_SIZE = 8000;
 const FOREST_SIZE_SCALE = TERRAIN_SIZE / FOREST_REF_SIZE;
 const FOREST_TREE_COUNT = 350000;
 const FOREST_SEED = 42;
-const TERRAIN_FOREST_GRASS_WEIGHT_MIN = 0.32;
-const TERRAIN_FOREST_HEIGHT_MIN = HEIGHT_SCALE * 0.008;
-const TERRAIN_FOREST_HEIGHT_MAX = HEIGHT_SCALE * 0.02;
+const TERRAIN_WATER_HEIGHT_NORM = 0.2;
+const TERRAIN_FOREST_HEIGHT_NORM_MIN = TERRAIN_WATER_HEIGHT_NORM + 0.04;
+const TERRAIN_FOREST_HEIGHT_NORM_MAX = 0.70;
+const TERRAIN_FOREST_WATER_CLEARANCE = HEIGHT_SCALE * 0.03;
+const TERRAIN_FOREST_HEIGHT_MIN = HEIGHT_SCALE * 0.022;
+const TERRAIN_FOREST_HEIGHT_MAX = HEIGHT_SCALE * 0.05;
 const TERRAIN_FOREST_CHUNK_SIZE = 400 * FOREST_SIZE_SCALE;
 const TERRAIN_FOREST_PLACEMENT_BATCH_MS = 14;
 const TERRAIN_FOREST_BUILD_BATCH_MS = 12;
@@ -73,7 +77,8 @@ function setStatus(text, isError) {
 
 const sunParams = {
   elevation: 32, azimuth: 180, exposure: 0.25, turbidity: 10, rayleigh: 1,
-  cloudCoverage: 0.45, cloudDensity: 0.45, cloudElevation: 0.5,
+  cloudCoverage: 0.55, cloudDensity: 0.85, cloudElevation: 0.5,
+  cloudScale: 0.0002, cloudSpeed: 0.00045,
 };
 const skySunDir = new THREE.Vector3();
 
@@ -110,13 +115,28 @@ function applySkyUniforms() {
   skyUniforms.rayleigh.value = sunParams.rayleigh;
   skyVisUniforms.turbidity.value = sunParams.turbidity;
   skyVisUniforms.rayleigh.value = sunParams.rayleigh;
-  skyUniforms.cloudCoverage.value = sunParams.cloudCoverage;
-  skyUniforms.cloudDensity.value = sunParams.cloudDensity;
-  skyUniforms.cloudElevation.value = sunParams.cloudElevation;
-  skyVisUniforms.cloudCoverage.value = sunParams.cloudCoverage;
-  skyVisUniforms.cloudDensity.value = sunParams.cloudDensity;
-  skyVisUniforms.cloudElevation.value = sunParams.cloudElevation;
+  for (const u of [skyUniforms, skyVisUniforms]) {
+    u.cloudCoverage.value = sunParams.cloudCoverage;
+    u.cloudDensity.value = sunParams.cloudDensity;
+    u.cloudElevation.value = sunParams.cloudElevation;
+    u.cloudScale.value = sunParams.cloudScale;
+    u.cloudSpeed.value = sunParams.cloudSpeed;
+  }
   renderer.toneMappingExposure = sunParams.exposure;
+}
+
+function syncSkyToCamera() {
+  // Keep the dome centered on the camera and sized to the far plane so
+  // extreme orbit zoom doesn't clip or shimmer the skydome.
+  const dist = camera.position.distanceTo(controls.target);
+  const far = Math.max(HEIGHT_SCALE * 4, dist * 2 + TERRAIN_SIZE);
+  if (Math.abs(camera.far - far) > far * 0.05) {
+    camera.far = far;
+    camera.updateProjectionMatrix();
+  }
+  const scale = Math.max(SKY_SCALE, camera.far * 0.45);
+  skyVisual.scale.setScalar(scale);
+  skyVisual.position.copy(camera.position);
 }
 
 function updateSun() {
@@ -143,17 +163,25 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.maxPolarAngle = Math.PI * 0.49;
 controls.minDistance = 1;
-controls.maxDistance = CAMERA_MAX_DISTANCE;
+controls.maxDistance = 500;
 controls.enablePan = false;
 controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 const sun = new THREE.DirectionalLight(0xfff4e6, 1.8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 1.0;
 scene.add(sun);
+scene.add(sun.target);
 const fill = new THREE.DirectionalLight(0x8899cc, 0.35);
 fill.position.set(-100, 80, -60);
 scene.add(fill);
+
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 updateSun();
 
@@ -180,13 +208,23 @@ const _rayOrigin = new THREE.Vector3();
 const _rayDir = new THREE.Vector3(0, -1, 0);
 
 function sampleTerrainHeight(x, z) {
-  if (!terrainGroup) return null;
-  _rayOrigin.set(x, HEIGHT_SCALE * 3, z);
-  _ray.set(_rayOrigin, _rayDir);
-  _ray.far = HEIGHT_SCALE * 5;
-  const hits = _ray.intersectObjects(terrainGroup.children, false);
-  if (hits.length > 0) return hits[0].point.y;
-  return HEIGHT_SCALE * 0.1;
+  // Prefer BVH raycast so feet match the rendered triangles (critical on inclines).
+  if (terrainMesh) {
+    _rayOrigin.set(x, HEIGHT_SCALE * 3, z);
+    _ray.set(_rayOrigin, _rayDir);
+    _ray.far = HEIGHT_SCALE * 5;
+    const hits = _ray.intersectObject(terrainMesh, false);
+    if (hits.length > 0) return hits[0].point.y;
+  }
+  if (terrainEntry) {
+    const sample = sampleTerrainSurface(terrainEntry, x, z);
+    if (sample) return sample.y;
+  }
+  return null;
+}
+
+function groundOffsetY() {
+  return character ? Math.max(0.05, character.height * 0.02) : 0.05;
 }
 
 // ---------- Forest ----------
@@ -253,25 +291,30 @@ function isAlphaBlendMaterial(mat) {
 function configureForestMaterial(mat) {
   if (!mat) return;
   mat.side = THREE.DoubleSide;
-  if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+  if (mat.map) {
+    mat.map.colorSpace = THREE.SRGBColorSpace;
+    mat.map.needsUpdate = true;
+  }
   if (mat.emissiveMap) mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
-  if (mat.alphaMode === 'MASK') {
-    mat.transparent = true;
-    mat.alphaTest = mat.alphaCutoff ?? 0.5;
+  // MASK cutout must stay opaque + alphaTest. transparent:true often makes
+  // instanced foliage vanish with logarithmic depth buffers.
+  if (mat.alphaMode === 'MASK' || (mat.map && (mat.alphaTest > 0 || /tree|leaf|foliage/i.test(mat.name || '')))) {
+    mat.transparent = false;
+    mat.opacity = 1;
+    mat.alphaTest = Math.max(mat.alphaCutoff ?? 0, 0.4);
     mat.depthWrite = true;
+    mat.alphaToCoverage = true;
   } else if (isAlphaBlendMaterial(mat)) {
     mat.transparent = true;
     mat.depthWrite = false;
     mat.alphaTest = 0;
-  } else if (mat.map) {
-    mat.transparent = true;
-    mat.alphaTest = 0.45;
-    mat.depthWrite = true;
   } else {
     mat.transparent = false;
+    mat.opacity = 1;
     mat.alphaTest = 0;
     mat.depthWrite = true;
   }
+  mat.needsUpdate = true;
 }
 
 function cloneForestMaterial(source) {
@@ -360,14 +403,12 @@ function terrainSmoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
-function terrainGrassWeight(heightNorm) {
-  const sandToGrass = terrainSmoothstep(0.0, 0.40, heightNorm);
-  const grassToStone = terrainSmoothstep(0.40, 0.75, heightNorm);
-  return sandToGrass * (1 - grassToStone);
-}
-
-function isGrassBiome(heightNorm) {
-  return terrainGrassWeight(heightNorm) >= TERRAIN_FOREST_GRASS_WEIGHT_MIN;
+function isForestTerrain(heightNorm, surfaceY, waterY) {
+  // Keep trees above the water plane and out of snow/high stone peaks.
+  if (!(heightNorm > TERRAIN_FOREST_HEIGHT_NORM_MIN && heightNorm < TERRAIN_FOREST_HEIGHT_NORM_MAX)) {
+    return false;
+  }
+  return surfaceY > waterY + TERRAIN_FOREST_WATER_CLEARANCE;
 }
 
 function sampleTerrainSurface(entry, x, z) {
@@ -380,6 +421,7 @@ function sampleTerrainSurface(entry, x, z) {
   const half = TERRAIN_SIZE / 2;
   const lx = x - entry.mesh.position.x;
   const lz = z - entry.mesh.position.z;
+  // PlaneGeometry stores verts as (x, -y, 0); after rotateX(-PI/2), row 0 → -Z, last → +Z.
   const gx = (lx + half) / TERRAIN_SIZE;
   const gz = (lz + half) / TERRAIN_SIZE;
   if (gx < 0 || gx > 1 || gz < 0 || gz > 1) return null;
@@ -400,6 +442,7 @@ function sampleTerrainSurface(entry, x, z) {
 
   const sampleY = (i) => pos.getY(i);
   const sampleH = (i) => heightNormAttr.array[i];
+  // Bilinear sample — matches continuous terrain height better for placement.
   const y = THREE.MathUtils.lerp(
     THREE.MathUtils.lerp(sampleY(i00), sampleY(i10), tx),
     THREE.MathUtils.lerp(sampleY(i01), sampleY(i11), tx),
@@ -441,7 +484,7 @@ function buildTerrainForestChunkGroup(trees, renderTemplates) {
     const { parts } = renderTemplates[ti];
     for (const part of parts) {
       const mesh = new THREE.InstancedMesh(part.geometry, part.material, instances.length);
-      mesh.frustumCulled = false;
+      mesh.frustumCulled = true;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       const arr = mesh.instanceMatrix.array;
@@ -454,6 +497,8 @@ function buildTerrainForestChunkGroup(trees, renderTemplates) {
         _dummy.matrix.toArray(arr, j * 16);
       }
       mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      if (mesh.boundingSphere) mesh.boundingSphere.radius *= 1.15;
       group.add(mesh);
       meshes.push(mesh);
     }
@@ -466,7 +511,7 @@ function buildTerrainForestChunkGroup(trees, renderTemplates) {
 function disposeTerrainForestChunkGroup(group) {
   group.traverse((child) => {
     if (!child.isInstancedMesh) return;
-    child.material?.dispose?.();
+    // Geometry/materials are owned by shared forest templates — only free instance data.
     child.dispose();
   });
 }
@@ -541,19 +586,20 @@ function forestPlacementChance(density) {
 }
 
 function scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed) {
-  const extraCount = Math.floor(cellRng() * (10 + density * density * 90));
-  const jitter = spacing * (density > 0.75 ? 0.035 : density > 0.5 ? 0.055 : 0.085);
+  const canopy = TERRAIN_FOREST_HEIGHT_MAX * 0.55;
+  const extraCount = Math.floor(cellRng() * (14 + density * density * 120));
+  const jitter = Math.min(spacing * (density > 0.75 ? 0.03 : density > 0.5 ? 0.05 : 0.08), canopy * 2.2);
   for (let e = 0; e < extraCount && countRef.value < targetCount; e++) {
     const jx = x + (cellRng() - 0.5) * jitter;
     const jz = z + (cellRng() - 0.5) * jitter;
     const clumpDensity = forestRegionDensity(jx, jz, seed);
-    if (clumpDensity < density * 0.18) continue;
+    if (clumpDensity < density * 0.15) continue;
     tryPlaceForestTree(entry, jx, jz, cellRng, chunkBins, waterY, countRef);
   }
 
-  if (density > 0.55 && countRef.value < targetCount) {
-    const ultraCount = Math.floor(cellRng() * (18 + density * 45));
-    const ultraJitter = spacing * 0.022;
+  if (density > 0.45 && countRef.value < targetCount) {
+    const ultraCount = Math.floor(cellRng() * (24 + density * 60));
+    const ultraJitter = Math.min(spacing * 0.018, canopy * 1.1);
     for (let e = 0; e < ultraCount && countRef.value < targetCount; e++) {
       const jx = x + (cellRng() - 0.5) * ultraJitter;
       const jz = z + (cellRng() - 0.5) * ultraJitter;
@@ -562,10 +608,28 @@ function scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, wa
   }
 }
 
-function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef) {
+function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef, stats = null) {
   const sample = sampleTerrainSurface(entry, x, z);
-  if (!sample || !isGrassBiome(sample.heightNorm)) return false;
-  if (sample.y <= waterY + 0.5) return false;
+  if (stats) {
+    stats.samples++;
+    if (!sample) {
+      stats.noSample++;
+      return false;
+    }
+    stats.minH = Math.min(stats.minH, sample.heightNorm);
+    stats.maxH = Math.max(stats.maxH, sample.heightNorm);
+    if (sample.heightNorm <= TERRAIN_FOREST_HEIGHT_NORM_MIN || sample.heightNorm >= TERRAIN_FOREST_HEIGHT_NORM_MAX) {
+      stats.outOfBand++;
+      return false;
+    }
+    if (sample.y <= waterY + TERRAIN_FOREST_WATER_CLEARANCE) {
+      stats.underwater++;
+      return false;
+    }
+    stats.ok++;
+  } else if (!sample || !isForestTerrain(sample.heightNorm, sample.y, waterY)) {
+    return false;
+  }
   addTreeToChunkBin(chunkBins, {
     x,
     y: sample.y,
@@ -579,17 +643,18 @@ function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef) {
 }
 
 async function generateMegaForestPlacementsAsync(entry, targetCount, seed, generation) {
-  const waterY = entry.waterMesh?.position.y ?? 0;
+  const waterY = entry.waterMesh?.position.y ?? HEIGHT_SCALE * TERRAIN_WATER_HEIGHT_NORM;
   const half = TERRAIN_SIZE * 0.47;
   const area = (half * 2) ** 2;
   const spacing = Math.sqrt(area / Math.max(1, targetCount * 0.85));
   const chunkBins = new Map();
   const countRef = { value: 0 };
+  const stats = { samples: 0, ok: 0, noSample: 0, underwater: 0, outOfBand: 0, minH: 1, maxH: 0 };
 
   const tryPlace = (x, z, cellRng) => {
     const density = forestRegionDensity(x, z, seed);
     if (density <= 0 || cellRng() > forestPlacementChance(density)) return false;
-    if (!tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef)) return false;
+    if (!tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef, stats)) return false;
     if (density > 0.15) scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed);
     return true;
   };
@@ -695,19 +760,30 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
   }
 
   if (generation !== terrainForestBuildGeneration) return null;
-  console.info(`Forest placed ${countRef.value.toLocaleString()} / ${targetCount.toLocaleString()} trees`);
-  return { chunkBins, count: countRef.value };
+  console.info(`Forest placed ${countRef.value.toLocaleString()} / ${targetCount.toLocaleString()} trees`, stats);
+  window.__forestDebug = { count: countRef.value, target: targetCount, waterY, stats };
+  return { chunkBins, count: countRef.value, waterY };
 }
 
 function pickForestSpawnTree(chunkBins) {
-  const keys = [...chunkBins.keys()];
-  if (!keys.length) return null;
-  const rng = mulberry32(FOREST_SEED + 123456);
-  for (let i = 0; i < 400; i++) {
-    const trees = chunkBins.get(keys[Math.floor(rng() * keys.length)]);
-    if (trees?.length) return trees[Math.floor(rng() * trees.length)];
+  let bestTrees = null;
+  for (const trees of chunkBins.values()) {
+    if (!bestTrees || trees.length > bestTrees.length) bestTrees = trees;
   }
-  return null;
+  if (!bestTrees?.length) return null;
+  // Prefer a tree near the densest chunk center so the player starts in a grove.
+  const cx = bestTrees.reduce((s, t) => s + t.x, 0) / bestTrees.length;
+  const cz = bestTrees.reduce((s, t) => s + t.z, 0) / bestTrees.length;
+  let best = bestTrees[0];
+  let bestDist = Infinity;
+  for (const tree of bestTrees) {
+    const d = (tree.x - cx) ** 2 + (tree.z - cz) ** 2;
+    if (d < bestDist) {
+      bestDist = d;
+      best = tree;
+    }
+  }
+  return best;
 }
 
 function findForestSpawn(entry, seed) {
@@ -722,7 +798,7 @@ function findForestSpawn(entry, seed) {
     const density = forestRegionDensity(x, z, seed);
     if (density < 0.2) continue;
     const sample = sampleTerrainSurface(entry, x, z);
-    if (!sample || !isGrassBiome(sample.heightNorm) || sample.y <= waterY + 0.5) continue;
+    if (!sample || !isForestTerrain(sample.heightNorm, sample.y, waterY)) continue;
     const score = density * sample.heightNorm;
     if (score > bestScore) {
       bestScore = score;
@@ -771,6 +847,13 @@ async function buildTerrainForest() {
 
   setStatus(`Building forest… ${result.count.toLocaleString()} trees`);
   await buildAllTerrainForestChunksAsync(system, generation);
+  window.__forestDebug = {
+    ...(window.__forestDebug || {}),
+    chunks: system.builtChunks.size,
+    meshes: system.instancedMeshes.length,
+    spawn: system.spawnTree,
+    totalCount: system.totalCount,
+  };
 }
 
 // ---------- Helpers ----------
@@ -822,8 +905,15 @@ function triggerOneShot(name) {
 
 const _dir = new THREE.Vector3();
 
+function triggerJump() {
+  if (character.oneShot || character.airborne) return;
+  character.vy = JUMP_VELOCITY;
+  character.airborne = true;
+  triggerOneShot('jump');
+}
+
 function triggerRoll() {
-  if (character.oneShot) return;
+  if (character.oneShot || character.airborne) return;
   if (inputDirection(_dir)) {
     character.rollDir.copy(_dir);
     character.group.rotation.y = Math.atan2(_dir.x, _dir.z);
@@ -872,6 +962,13 @@ function updateGameplay(delta) {
     moveGroup(character.rollDir, ROLL_SPEED, delta);
     return;
   }
+  if (character.airborne) {
+    if (character.oneShot !== 'jump' && isMoving() && inputDirection(_dir)) {
+      moveGroup(_dir, WALK_SPEED * 0.55, delta);
+      faceDirection(_dir, delta);
+    }
+    return;
+  }
   if (character.oneShot) return;
   const moving = isMoving();
   if (character.state !== (moving ? 'walk' : 'idle')) setGameplayState(moving ? 'walk' : 'idle');
@@ -879,6 +976,46 @@ function updateGameplay(delta) {
   if (!inputDirection(_dir)) return;
   moveGroup(_dir, WALK_SPEED, delta);
   faceDirection(_dir, delta);
+}
+
+function snapToGround() {
+  const pos = character.group.position;
+  const h = sampleTerrainHeight(pos.x, pos.z);
+  if (h === null) return false;
+  pos.y = h + groundOffsetY();
+  return true;
+}
+
+function updateVertical(delta) {
+  const pos = character.group.position;
+  if (!character.airborne) return false;
+  character.vy -= JUMP_GRAVITY * delta;
+  pos.y += character.vy * delta;
+  const ground = sampleTerrainHeight(pos.x, pos.z);
+  const floorY = ground === null ? null : ground + groundOffsetY();
+  if (floorY !== null && pos.y <= floorY && character.vy <= 0) {
+    pos.y = floorY;
+    character.vy = 0;
+    character.airborne = false;
+    if (!character.oneShot) setGameplayState(isMoving() ? 'walk' : 'idle');
+  }
+  return true;
+}
+
+function updateSunShadow() {
+  if (!character) return;
+  const pos = character.group.position;
+  const reach = Math.max(220, character.height * 48);
+  sun.target.position.copy(pos);
+  sun.position.copy(pos).addScaledVector(skySunDir, reach * 2.8);
+  const cam = sun.shadow.camera;
+  cam.left = -reach;
+  cam.right = reach;
+  cam.top = reach;
+  cam.bottom = -reach;
+  cam.near = 1;
+  cam.far = reach * 5;
+  cam.updateProjectionMatrix();
 }
 
 function isMoving() {
@@ -903,11 +1040,11 @@ function frameCameraChar() {
   controls.target.set(pos.x, targetY, pos.z);
   camera.position.set(pos.x, targetY + h, pos.z - h * 3);
   controls.minDistance = Math.max(5, h * 0.8);
-  controls.maxDistance = CAMERA_MAX_DISTANCE;
+  controls.maxDistance = Math.max(h * 20, controls.minDistance + 1);
   camera.near = Math.max(0.1, h * 0.1);
-  camera.far = TERRAIN_SIZE * 3;
   camera.updateProjectionMatrix();
   resolveCameraCollision(h);
+  syncSkyToCamera();
 }
 
 function resolveCameraCollision(h) {
@@ -950,7 +1087,7 @@ window.addEventListener('keydown', (e) => {
   if (!character) return;
   if (e.code in keys) { keys[e.code] = true; return; }
   if (e.repeat) return;
-  if (e.code === 'Space') { e.preventDefault(); triggerOneShot('jump'); }
+  if (e.code === 'Space') { e.preventDefault(); triggerJump(); }
   else if (e.code === 'ControlLeft' || e.code === 'ControlRight') { e.preventDefault(); triggerRoll(); }
 });
 
@@ -971,31 +1108,53 @@ const TERRAIN_TEXTURE_SCALE = 48;
 const TERRAIN_TEXTURE_REPEAT = TERRAIN_TEXTURE_SCALE * (TERRAIN_SIZE / TERRAIN_TEXTURE_REFERENCE_SIZE);
 const TERRAIN_HEX_TILING = {
   patchScale: 2,
-  useContrastCorrectedBlending: true,
-  lookupSkipThreshold: 0.01,
-  textureSampleCoefficientExponent: 8,
+  useContrastCorrectedBlending: false,
+  lookupSkipThreshold: 0.08,
+  textureSampleCoefficientExponent: 6,
+  layerWeightMin: 0.02,
 };
 const terrainTextureLoader = new THREE.TextureLoader();
 
-function loadTerrainTextureSet(prefix) {
-  const tex = terrainTextureLoader.load(`./textures/${prefix}_Color.jpg`);
+function configureTerrainTexture(tex, colorSpace) {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(TERRAIN_TEXTURE_REPEAT, TERRAIN_TEXTURE_REPEAT);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace = colorSpace;
   tex.anisotropy = 8;
   return tex;
+}
+
+function loadTerrainTexture(url, colorSpace) {
+  return new Promise((resolve, reject) => {
+    terrainTextureLoader.load(
+      url,
+      (tex) => resolve(configureTerrainTexture(tex, colorSpace)),
+      undefined,
+      () => reject(new Error(`Failed to load texture: ${url}`)),
+    );
+  });
+}
+
+async function loadTerrainTextureSet(prefix) {
+  const base = `./textures/${prefix}`;
+  const [color, normal, roughness, ao] = await Promise.all([
+    loadTerrainTexture(`${base}_Color.jpg`, THREE.SRGBColorSpace),
+    loadTerrainTexture(`${base}_NormalGL.jpg`, THREE.NoColorSpace),
+    loadTerrainTexture(`${base}_Roughness.jpg`, THREE.NoColorSpace),
+    loadTerrainTexture(`${base}_AmbientOcclusion.jpg`, THREE.NoColorSpace),
+  ]);
+  return { color, normal, roughness, ao };
 }
 
 let terrainTextureSetsPromise = null;
 
 function loadTerrainTextureSets() {
   if (!terrainTextureSetsPromise) {
-    terrainTextureSetsPromise = Promise.resolve({
-      sand: { color: loadTerrainTextureSet('Ground103_2K-JPG') },
-      grass: { color: loadTerrainTextureSet('Ground037_2K-JPG') },
-      stone: { color: loadTerrainTextureSet('Snow015_2K-JPG') },
-      snow: { color: loadTerrainTextureSet('Snow014_2K-JPG') },
-    });
+    terrainTextureSetsPromise = Promise.all([
+      loadTerrainTextureSet('Ground103_2K-JPG'),
+      loadTerrainTextureSet('Ground037_2K-JPG'),
+      loadTerrainTextureSet('Snow015_2K-JPG'),
+      loadTerrainTextureSet('Snow014_2K-JPG'),
+    ]).then(([sand, grass, stone, snow]) => ({ sand, grass, stone, snow }));
   }
   return terrainTextureSetsPromise;
 }
@@ -1009,6 +1168,10 @@ uniform bool hexTilingUseContrastCorrectedBlending;
 uniform float hexTilingPatchScale;
 uniform float hexTilingLookupSkipThreshold;
 uniform float hexTilingTextureSampleCoefficientExponent;
+uniform float terrainLayerWeightMin;
+uniform sampler2D uNormSand, uNormGrass, uNormStone, uNormSnow;
+uniform sampler2D uRoughSand, uRoughGrass, uRoughStone, uRoughSnow;
+uniform sampler2D uAoSand, uAoGrass, uAoStone, uAoSnow;
 
 float terrainHash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -1060,36 +1223,88 @@ vec4 textureNoTileNeyret(sampler2D samp, vec2 uv) {
 vec4 sampleTerrainTex(sampler2D tex, vec2 worldUv) {
   return textureNoTileNeyret(tex, worldUv);
 }
-vec4 blendTerrainLayer(vec4 low, vec4 high, float t, float edge, float span) {
-  float w = smoothstep(edge, edge + span, t);
-  return mix(low, high, w);
+vec4 terrainLayerWeights(float h, vec2 mapUv) {
+  float blendH = clamp(h + (terrainNoise(mapUv * 0.12) - 0.5) * 0.14, 0.0, 1.0);
+  float sg = smoothstep(0.0, 0.40, blendH);
+  float gs = smoothstep(0.40, 0.75, blendH);
+  float sn = smoothstep(0.75, 1.0, blendH);
+  float wSand = (1.0 - sg) * (1.0 - gs) * (1.0 - sn);
+  float wGrass = sg * (1.0 - gs) * (1.0 - sn);
+  float wStone = gs * (1.0 - sn);
+  float wSnow = sn;
+  return vec4(wSand, wGrass, wStone, wSnow);
 }
 vec4 getTerrainColor(vec2 mapUv, float h) {
-  float blendH = clamp(h + (terrainNoise(mapUv * 0.12) - 0.5) * 0.14, 0.0, 1.0);
-  vec4 sand = sampleTerrainTex(uTexSand, mapUv);
-  vec4 grass = sampleTerrainTex(uTexGrass, mapUv);
-  vec4 stone = sampleTerrainTex(uTexStone, mapUv);
-  vec4 snow = sampleTerrainTex(uTexSnow, mapUv);
-  return blendTerrainLayer(
-    blendTerrainLayer(
-      blendTerrainLayer(sand, grass, blendH, 0.0, 0.40),
-      stone, blendH, 0.40, 0.35),
-    snow, blendH, 0.75, 0.25);
+  vec4 w = terrainLayerWeights(h, mapUv);
+  vec4 color = vec4(0.0);
+  float wSum = 0.0;
+  if (w.x > terrainLayerWeightMin) { color += sampleTerrainTex(uTexSand, mapUv) * w.x; wSum += w.x; }
+  if (w.y > terrainLayerWeightMin) { color += sampleTerrainTex(uTexGrass, mapUv) * w.y; wSum += w.y; }
+  if (w.z > terrainLayerWeightMin) { color += sampleTerrainTex(uTexStone, mapUv) * w.z; wSum += w.z; }
+  if (w.w > terrainLayerWeightMin) { color += sampleTerrainTex(uTexSnow, mapUv) * w.w; wSum += w.w; }
+  return color / max(wSum, 1e-3);
+}
+vec3 getTerrainNormal(vec2 mapUv, float h) {
+  vec4 w = terrainLayerWeights(h, mapUv);
+  vec3 n = vec3(0.0);
+  float wSum = 0.0;
+  if (w.x > terrainLayerWeightMin) { n += texture2D(uNormSand, mapUv).xyz * w.x; wSum += w.x; }
+  if (w.y > terrainLayerWeightMin) { n += texture2D(uNormGrass, mapUv).xyz * w.y; wSum += w.y; }
+  if (w.z > terrainLayerWeightMin) { n += texture2D(uNormStone, mapUv).xyz * w.z; wSum += w.z; }
+  if (w.w > terrainLayerWeightMin) { n += texture2D(uNormSnow, mapUv).xyz * w.w; wSum += w.w; }
+  return n / max(wSum, 1e-3);
+}
+float getTerrainRoughness(vec2 mapUv, float h) {
+  vec4 w = terrainLayerWeights(h, mapUv);
+  float r = 0.0;
+  float wSum = 0.0;
+  if (w.x > terrainLayerWeightMin) { r += texture2D(uRoughSand, mapUv).r * w.x; wSum += w.x; }
+  if (w.y > terrainLayerWeightMin) { r += texture2D(uRoughGrass, mapUv).r * w.y; wSum += w.y; }
+  if (w.z > terrainLayerWeightMin) { r += texture2D(uRoughStone, mapUv).r * w.z; wSum += w.z; }
+  if (w.w > terrainLayerWeightMin) { r += texture2D(uRoughSnow, mapUv).r * w.w; wSum += w.w; }
+  return r / max(wSum, 1e-3);
+}
+float getTerrainAO(vec2 mapUv, float h) {
+  vec4 w = terrainLayerWeights(h, mapUv);
+  float a = 0.0;
+  float wSum = 0.0;
+  if (w.x > terrainLayerWeightMin) { a += texture2D(uAoSand, mapUv).r * w.x; wSum += w.x; }
+  if (w.y > terrainLayerWeightMin) { a += texture2D(uAoGrass, mapUv).r * w.y; wSum += w.y; }
+  if (w.z > terrainLayerWeightMin) { a += texture2D(uAoStone, mapUv).r * w.z; wSum += w.z; }
+  if (w.w > terrainLayerWeightMin) { a += texture2D(uAoSnow, mapUv).r * w.w; wSum += w.w; }
+  return a / max(wSum, 1e-3);
 }
 `;
 
 function applyTerrainTextureBlending(material, sets) {
   material.map = sets.sand.color;
+  material.normalMap = sets.sand.normal;
+  material.roughnessMap = sets.sand.roughness;
+  material.aoMap = sets.sand.ao;
+  material.aoMapIntensity = 1.0;
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTexSand = { value: sets.sand.color };
     shader.uniforms.uTexGrass = { value: sets.grass.color };
     shader.uniforms.uTexStone = { value: sets.stone.color };
     shader.uniforms.uTexSnow = { value: sets.snow.color };
+    shader.uniforms.uNormSand = { value: sets.sand.normal };
+    shader.uniforms.uNormGrass = { value: sets.grass.normal };
+    shader.uniforms.uNormStone = { value: sets.stone.normal };
+    shader.uniforms.uNormSnow = { value: sets.snow.normal };
+    shader.uniforms.uRoughSand = { value: sets.sand.roughness };
+    shader.uniforms.uRoughGrass = { value: sets.grass.roughness };
+    shader.uniforms.uRoughStone = { value: sets.stone.roughness };
+    shader.uniforms.uRoughSnow = { value: sets.snow.roughness };
+    shader.uniforms.uAoSand = { value: sets.sand.ao };
+    shader.uniforms.uAoGrass = { value: sets.grass.ao };
+    shader.uniforms.uAoStone = { value: sets.stone.ao };
+    shader.uniforms.uAoSnow = { value: sets.snow.ao };
     shader.uniforms.hexTilingUseContrastCorrectedBlending = { value: TERRAIN_HEX_TILING.useContrastCorrectedBlending };
     shader.uniforms.hexTilingPatchScale = { value: TERRAIN_HEX_TILING.patchScale };
     shader.uniforms.hexTilingLookupSkipThreshold = { value: TERRAIN_HEX_TILING.lookupSkipThreshold };
     shader.uniforms.hexTilingTextureSampleCoefficientExponent = { value: TERRAIN_HEX_TILING.textureSampleCoefficientExponent };
+    shader.uniforms.terrainLayerWeightMin = { value: TERRAIN_HEX_TILING.layerWeightMin };
 
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
@@ -1105,9 +1320,21 @@ varying float vHeightNorm;
 ${TERRAIN_BLEND_GLSL}`)
       .replace('#include <map_fragment>', `#ifdef USE_MAP
 diffuseColor *= getTerrainColor(vMapUv, vHeightNorm);
-#endif`);
+#endif`)
+      .replace(
+        'texture2D( normalMap, vNormalMapUv )',
+        'vec4( getTerrainNormal( vNormalMapUv, vHeightNorm ), 1.0 )',
+      )
+      .replace(
+        'texture2D( roughnessMap, vRoughnessMapUv )',
+        'vec4( getTerrainRoughness( vMapUv, vHeightNorm ) )',
+      )
+      .replace(
+        'texture2D( aoMap, vAoMapUv )',
+        'vec4( getTerrainAO( vAoMapUv, vHeightNorm ) )',
+      );
   };
-  material.customProgramCacheKey = () => 'terrain-height-blend-hex-v1';
+  material.customProgramCacheKey = () => 'terrain-height-blend-hex-pbr-v4';
   material.needsUpdate = true;
 }
 
@@ -1136,14 +1363,21 @@ async function loadTerrain() {
   geometry.rotateX(-Math.PI / 2);
 
   const uv = geometry.attributes.uv;
+  geometry.setAttribute('uv2', uv);
   const pos = geometry.attributes.position;
   let minH = Infinity, maxH = -Infinity;
   const heights = new Float32Array(pos.count);
+  const decodeHeight = (r, g, b) => {
+    // Grayscale JPG DEM: use luma. Packed 24-bit RGB elevation: full range.
+    const maxDiff = Math.max(Math.abs(r - g), Math.abs(r - b), Math.abs(g - b));
+    if (maxDiff <= 2) return r / 255;
+    return (r * 65536 + g * 256 + b) / 16777215;
+  };
   for (let i = 0; i < pos.count; i++) {
     const px = Math.min(Math.floor(uv.getX(i) * sampleSize), sampleSize - 1);
     const py = Math.min(Math.floor((1 - uv.getY(i)) * sampleSize), sampleSize - 1);
     const idx = (py * sampleSize + px) * 4;
-    const h = (data[idx] * 65536 + data[idx + 1] * 256 + data[idx + 2]) / 65535;
+    const h = decodeHeight(data[idx], data[idx + 1], data[idx + 2]);
     heights[i] = h;
     if (h < minH) minH = h;
     if (h > maxH) maxH = h;
@@ -1172,6 +1406,8 @@ async function loadTerrain() {
 
   const mesh = new THREE.Mesh(geometry, material);
   terrainMesh = mesh;
+  mesh.receiveShadow = true;
+  mesh.castShadow = false;
   mesh.raycast = acceleratedRaycast;
   geometry.computeBoundsTree = computeBoundsTree;
   geometry.disposeBoundsTree = disposeBoundsTree;
@@ -1188,8 +1424,9 @@ async function loadTerrain() {
   });
   const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE), waterMat);
   waterMesh.rotation.x = -Math.PI / 2;
-  waterMesh.position.y = HEIGHT_SCALE * 0.2;
+  waterMesh.position.y = HEIGHT_SCALE * TERRAIN_WATER_HEIGHT_NORM;
   waterMesh.renderOrder = 1;
+  waterMesh.raycast = () => {};
 
   const group = new THREE.Group();
   group.add(mesh);
@@ -1231,6 +1468,12 @@ async function loadCharacter() {
 
   // Height-based clip config matching test-engine-index
   const CLIPS = { idle: 'InjuredIdle', walk: 'CrouchedWalking', jump: 'Jump', roll: 'SprintingForwardRoll' };
+  for (const [key, name] of Object.entries(CLIPS)) {
+    if (!byName[name]) {
+      const available = clips.map((c) => c.name).join(', ') || '(none)';
+      throw new Error(`Missing animation clip "${name}" for ${key}. Available: ${available}`);
+    }
+  }
   const actions = {
     idle: mixer.clipAction(byName[CLIPS.idle]),
     walk: mixer.clipAction(inPlaceClip(byName[CLIPS.walk])),
@@ -1244,28 +1487,26 @@ async function loadCharacter() {
 
   mixer.addEventListener('finished', () => {
     character.oneShot = null;
-    setGameplayState(isMoving() ? 'walk' : 'idle');
+    if (!character.airborne) setGameplayState(isMoving() ? 'walk' : 'idle');
   });
 
-  character = { group, mixer, actions, height, state: 'idle', oneShot: null, currentAction: null, rollDir: new THREE.Vector3() };
+  character = {
+    group, mixer, actions, height, state: 'idle', oneShot: null, currentAction: null,
+    rollDir: new THREE.Vector3(), vy: 0, airborne: false,
+  };
   setGameplayState('idle');
 
   const spawn = terrainForestSystem?.spawnTree ?? findForestSpawn(terrainEntry, FOREST_SEED);
   if (spawn) {
-    group.position.set(spawn.x, spawn.y, spawn.z);
+    group.position.set(spawn.x, spawn.y + Math.max(0.05, height * 0.02), spawn.z);
   } else {
     const h = sampleTerrainHeight(group.position.x, group.position.z);
-    if (h !== null) group.position.y = h;
+    if (h !== null) group.position.y = h + Math.max(0.05, height * 0.02);
   }
   frameCameraChar();
 }
 
 // ---------- Init ----------
-
-let _lastSampleX = 0, _lastSampleZ = 0;
-const SAMPLE_FRAME_INTERVAL = 4;
-const SAMPLE_MOVE_THRESHOLD_SQ = 1600;
-let sampleFrameCount = 0;
 
 async function init() {
   try {
@@ -1286,21 +1527,15 @@ init();
 function loop() {
   requestAnimationFrame(loop);
   const delta = Math.min(clock.getDelta(), 0.05);
-  skyAnimTime += delta;
+  skyAnimTime += delta * SKY_ANIM_SPEED;
   skyVisUniforms.time.value = skyAnimTime;
-  skyVisual.position.copy(camera.position);
+  syncSkyToCamera();
   if (character) {
     character.mixer.update(delta);
     updateGameplay(delta);
-    const pos = character.group.position;
-    const dx = pos.x - _lastSampleX;
-    const dz = pos.z - _lastSampleZ;
-    sampleFrameCount++;
-    if ((sampleFrameCount & (SAMPLE_FRAME_INTERVAL - 1)) === 0 || dx * dx + dz * dz > SAMPLE_MOVE_THRESHOLD_SQ) {
-      const h = sampleTerrainHeight(pos.x, pos.z);
-      if (h !== null) { pos.y = h; _lastSampleX = pos.x; _lastSampleZ = pos.z; }
-    }
+    if (!updateVertical(delta)) snapToGround();
     followCamera(delta);
+    updateSunShadow();
   }
   controls.update();
   updateCameraCollision();
