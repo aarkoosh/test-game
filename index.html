@@ -8,17 +8,33 @@
 body{margin:0;overflow:hidden;background:#0e1117;}
 canvas{display:block;}
 #loading{
-  position:fixed;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:12px;
-  background:#0e1117;color:#ccc;font:14px/1.5 system-ui,sans-serif;
-  z-index:20;transition:opacity 0.4s;
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:#0e1117;z-index:20;transition:opacity 0.4s;
 }
 #loading.hidden{opacity:0;pointer-events:none;}
-#loading.error{color:#f66;}
+#loading-panel{min-width:320px;max-width:min(440px,92vw);}
+#loading-title{
+  font:600 14px/1.5 system-ui,sans-serif;color:rgba(255,255,255,0.6);
+  margin-bottom:16px;letter-spacing:0.03em;text-transform:uppercase;
+}
+#loading.error #loading-title{color:#f87171;}
+#loading-items{display:flex;flex-direction:column;gap:6px;}
+.loading-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:4px 0;}
+.loading-name{font:500 12px/1.4 system-ui,sans-serif;color:rgba(255,255,255,0.7);}
+.loading-status{font:600 11px/1.4 ui-monospace,monospace;color:rgba(255,255,255,0.35);text-align:right;}
+.loading-status.pending{color:rgba(255,255,255,0.35);}
+.loading-status.loading{color:#64b5f6;}
+.loading-status.complete{color:#4ade80;}
+.loading-status.error{color:#f87171;}
 </style>
 </head>
 <body>
-<div id="loading">Loading…</div>
+<div id="loading">
+  <div id="loading-panel">
+    <div id="loading-title">Loading…</div>
+    <div id="loading-items"></div>
+  </div>
+</div>
 <script type="importmap">
 {
   "imports": {
@@ -52,26 +68,94 @@ const FOREST_REF_SIZE = 8000;
 const FOREST_SIZE_SCALE = TERRAIN_SIZE / FOREST_REF_SIZE;
 const FOREST_TREE_COUNT = 350000;
 const FOREST_SEED = 42;
+const TERRAIN_HEIGHTMAP_URL = './heightmapdefault.png';
+const FOREST_SPAWN_GUIDE_URL = './heightmap6step.png';
+const FOREST_SPAWN_GUIDE_STEP = 4;
+const FOREST_SPAWN_GUIDE_MAX_STEP = 6;
 const TERRAIN_WATER_HEIGHT_NORM = 0.2;
-const TERRAIN_FOREST_HEIGHT_NORM_MIN = TERRAIN_WATER_HEIGHT_NORM + 0.04;
-const TERRAIN_FOREST_HEIGHT_NORM_MAX = 0.70;
 const TERRAIN_FOREST_WATER_CLEARANCE = HEIGHT_SCALE * 0.03;
-const TERRAIN_FOREST_HEIGHT_MIN = HEIGHT_SCALE * 0.022;
-const TERRAIN_FOREST_HEIGHT_MAX = HEIGHT_SCALE * 0.05;
 const TERRAIN_FOREST_CHUNK_SIZE = 400 * FOREST_SIZE_SCALE;
-const TERRAIN_FOREST_PLACEMENT_BATCH_MS = 14;
+const TERRAIN_FOREST_PLACEMENT_BATCH_MS = 18;
 const TERRAIN_FOREST_BUILD_BATCH_MS = 12;
-const TERRAIN_FOREST_BARE_CUTOFF = 0.16;
-const FOREST_TREE_MODELS = [
-  { url: './pine_tree.glb', name: 'pine' },
-];
+const TERRAIN_FOREST_BARE_CUTOFF = 0.28;
+const FOLIAGE_PACK_URL = './low_poly_trees_flowers_and_grass.glb';
+const FOLIAGE_SCALE = {
+  tree: { min: HEIGHT_SCALE * 0.02, max: HEIGHT_SCALE * 0.048 },
+  grass: { min: HEIGHT_SCALE * 0.0012, max: HEIGHT_SCALE * 0.0035 },
+  flower: { min: HEIGHT_SCALE * 0.001, max: HEIGHT_SCALE * 0.0028 },
+  plant: { min: HEIGHT_SCALE * 0.0014, max: HEIGHT_SCALE * 0.004 },
+};
+const FOLIAGE_SPAWN_WEIGHT = {
+  tree: 1,
+  grass: 0,
+  flower: 0,
+  plant: 0,
+};
+// Zone-4 forest trees: only stylized 03 / 04 / 05 (skip 01 and dry 02).
+const FOREST_ZONE4_TREE_NAME_RE = /tree-stylized-0[345]\b/i;
+const FOLIAGE_MIN_SPACING = {
+  tree: FOLIAGE_SCALE.tree.min * 0.65,
+  grass: FOLIAGE_SCALE.grass.min * 1.1,
+  flower: FOLIAGE_SCALE.flower.min * 1.0,
+  plant: FOLIAGE_SCALE.plant.min * 1.05,
+};
 
 const loadingEl = document.getElementById('loading');
+const loadingTitleEl = document.getElementById('loading-title');
+const loadingItemsEl = document.getElementById('loading-items');
 
-function setStatus(text, isError) {
-  loadingEl.textContent = text;
-  loadingEl.classList.toggle('error', !!isError);
-}
+const LOAD_STEPS = [
+  'Heightmap',
+  'Forest guide',
+  'Terrain textures',
+  'Terrain',
+  'Forest models',
+  'Forest placement',
+  'Forest build',
+  'Character',
+];
+
+const loadingMgr = {
+  _items: new Map(),
+  init(names) {
+    this._items.clear();
+    loadingItemsEl.innerHTML = '';
+    loadingTitleEl.textContent = 'Loading…';
+    loadingEl.classList.remove('error', 'hidden');
+    for (const name of names) {
+      const row = document.createElement('div');
+      row.className = 'loading-row';
+      const label = document.createElement('span');
+      label.className = 'loading-name';
+      label.textContent = name;
+      const status = document.createElement('span');
+      status.className = 'loading-status pending';
+      status.textContent = 'Pending';
+      row.append(label, status);
+      loadingItemsEl.appendChild(row);
+      this._items.set(name, { el: status, state: 'pending' });
+    }
+  },
+  set(name, state, detail) {
+    const item = this._items.get(name);
+    if (!item) return;
+    item.state = state;
+    const key = state.toLowerCase();
+    item.el.className = `loading-status ${key}`;
+    item.el.textContent = detail || state;
+  },
+  fail(err) {
+    loadingEl.classList.add('error');
+    loadingTitleEl.textContent = 'Failed: ' + (err?.message || err);
+    for (const [name, item] of this._items) {
+      if (item.state === 'loading') this.set(name, 'Error');
+    }
+  },
+  hide() {
+    loadingTitleEl.textContent = 'Ready';
+    setTimeout(() => loadingEl.classList.add('hidden'), 350);
+  },
+};
 
 // ---------- Scene setup ----------
 
@@ -350,50 +434,139 @@ function consolidateTemplateParts(parts) {
   return [{ geometry: merged, material: materials.length === 1 ? materials[0] : materials }];
 }
 
-function bakeTreeTemplate(template) {
+function foliageCategory(name) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('tree')) return 'tree';
+  if (n.includes('grass')) return 'grass';
+  if (n.includes('flower') || n.includes('daisy') || n.includes('daffodil')) return 'flower';
+  if (n.includes('plant')) return 'plant';
+  return 'plant';
+}
+
+function bakeTreeTemplate(template, category) {
   template.updateWorldMatrix(true, true);
   const meshes = [];
   template.traverse((child) => { if (child.isMesh) meshes.push(child); });
   if (!meshes.length) throw new Error(`No mesh on template ${template.name}`);
 
-  const totalBox = computeMeshBox(template);
-  const minY = Number.isFinite(totalBox.min.y) ? totalBox.min.y : 0;
-  const height = Math.max(totalBox.getSize(_v).y, 1e-6);
-  const norm = 1 / height;
-
+  // Keep full matrixWorld so Sketchfab/FBX axis conversion stays (Y-up).
   const parts = meshes.map((mesh) => {
     const geometry = mesh.geometry.clone();
     geometry.applyMatrix4(mesh.matrixWorld);
-    geometry.scale(norm, norm, norm);
-    geometry.translate(0, -minY * norm, 0);
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
     return { geometry, material: cloneForestMaterial(mesh.material) };
   });
 
-  return { name: template.name, parts: consolidateTemplateParts(parts), sourceHeight: height };
+  const worldBox = new THREE.Box3();
+  for (const part of parts) {
+    part.geometry.computeBoundingBox();
+    worldBox.union(part.geometry.boundingBox);
+  }
+  const minY = Number.isFinite(worldBox.min.y) ? worldBox.min.y : 0;
+  const midX = (worldBox.min.x + worldBox.max.x) * 0.5;
+  const midZ = (worldBox.min.z + worldBox.max.z) * 0.5;
+  const height = Math.max(worldBox.max.y - worldBox.min.y, 1e-6);
+  const norm = 1 / height;
+  // Slight sink so MASK cutout / pivot slack doesn't leave plants hovering.
+  const sink = height * 0.02;
+
+  // Center XZ + ground Y first, THEN normalize. Scaling around the world
+  // origin while plants are still at pack layout positions was the old float bug.
+  for (const part of parts) {
+    part.geometry.translate(-midX, -minY - sink, -midZ);
+    part.geometry.scale(norm, norm, norm);
+    part.geometry.computeVertexNormals();
+    part.geometry.computeBoundingBox();
+    part.geometry.computeBoundingSphere();
+  }
+
+  const kind = category || foliageCategory(template.name);
+  return {
+    name: template.name,
+    category: kind,
+    parts: consolidateTemplateParts(parts),
+    sourceHeight: height,
+    scaleMin: FOLIAGE_SCALE[kind].min,
+    scaleMax: FOLIAGE_SCALE[kind].max,
+  };
 }
 
-function extractTreeTemplate(gltf, name) {
-  const root = gltf.scene;
-  root.name = name;
-  root.updateWorldMatrix(true, true);
-  return bakeTreeTemplate(root);
+function findFoliageLayoutRoot(root) {
+  let node = root;
+  while (node.children.length === 1 && !node.children[0].isMesh) {
+    node = node.children[0];
+  }
+  return node;
+}
+
+function extractFoliageTemplates(gltf) {
+  gltf.scene.updateWorldMatrix(true, true);
+  const layout = findFoliageLayoutRoot(gltf.scene);
+  const templates = [];
+  for (const child of layout.children) {
+    let hasMesh = false;
+    child.traverse((n) => { if (n.isMesh) hasMesh = true; });
+    if (!hasMesh) continue;
+    // Neutralize pack layout translation so each plant is authored at its own origin.
+    child.updateWorldMatrix(true, true);
+    templates.push(bakeTreeTemplate(child));
+  }
+  if (!templates.length) throw new Error('No foliage templates found in pack');
+  return templates;
+}
+
+function isForestZone4TreeTemplate(template) {
+  return FOREST_ZONE4_TREE_NAME_RE.test(template?.name || '');
+}
+
+function buildFoliageTypeWeights(templates) {
+  const byCat = { tree: [], grass: [], flower: [], plant: [] };
+  templates.forEach((t, i) => {
+    if (t.category === 'tree' && !isForestZone4TreeTemplate(t)) return;
+    byCat[t.category]?.push(i);
+  });
+  const entries = [];
+  let total = 0;
+  for (const [cat, idxs] of Object.entries(byCat)) {
+    if (!idxs.length) continue;
+    const share = FOLIAGE_SPAWN_WEIGHT[cat] ?? 0;
+    if (share <= 0) continue;
+    const each = share / idxs.length;
+    for (const i of idxs) {
+      entries.push({ index: i, weight: each });
+      total += each;
+    }
+  }
+  if (!total) throw new Error('No foliage types available for forest spawn pool');
+  let acc = 0;
+  return entries.map((e) => {
+    acc += e.weight / total;
+    return { index: e.index, cdf: acc };
+  });
+}
+
+function pickFoliageType(weights, rng) {
+  const r = rng();
+  for (const entry of weights) {
+    if (r <= entry.cdf) return entry.index;
+  }
+  return weights[weights.length - 1].index;
 }
 
 async function loadForestTreeTemplates() {
   if (!forestTemplatesPromise) {
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
     const loader = new GLTFLoader();
-    forestTemplatesPromise = Promise.all(
-      FOREST_TREE_MODELS.map(({ url, name }) => new Promise((resolve, reject) => {
-        loader.load(url, (gltf) => {
-          try { resolve(extractTreeTemplate(gltf, name)); }
-          catch (err) { reject(err); }
-        }, undefined, reject);
-      })),
-    );
+    forestTemplatesPromise = new Promise((resolve, reject) => {
+      loader.load(FOLIAGE_PACK_URL, (gltf) => {
+        try {
+          const templates = extractFoliageTemplates(gltf);
+          templates._typeWeights = buildFoliageTypeWeights(templates);
+          resolve(templates);
+        } catch (err) {
+          reject(err);
+        }
+      }, undefined, reject);
+    });
   }
   return forestTemplatesPromise;
 }
@@ -403,12 +576,62 @@ function terrainSmoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
-function isForestTerrain(heightNorm, surfaceY, waterY) {
-  // Keep trees above the water plane and out of snow/high stone peaks.
-  if (!(heightNorm > TERRAIN_FOREST_HEIGHT_NORM_MIN && heightNorm < TERRAIN_FOREST_HEIGHT_NORM_MAX)) {
-    return false;
-  }
+function worldToTerrainGrid(entry, x, z) {
+  const half = TERRAIN_SIZE / 2;
+  const mesh = entry?.mesh;
+  const lx = x - (mesh?.position.x ?? 0);
+  const lz = z - (mesh?.position.z ?? 0);
+  // PlaneGeometry stores verts as (x, -y, 0); after rotateX(-PI/2), row 0 → -Z, last → +Z.
+  const gx = (lx + half) / TERRAIN_SIZE;
+  const gz = (lz + half) / TERRAIN_SIZE;
+  if (gx < 0 || gx > 1 || gz < 0 || gz > 1) return null;
+  return { gx, gz };
+}
+
+function sampleForestGuideStep(entry, x, z) {
+  const guide = entry?.forestGuide;
+  if (!guide?.steps) return -1;
+  const grid = worldToTerrainGrid(entry, x, z);
+  if (!grid) return -1;
+  const px = Math.min(Math.floor(grid.gx * guide.width), guide.width - 1);
+  // Match heightmap image orientation: gz=0 is the top row of the PNG.
+  const py = Math.min(Math.floor(grid.gz * guide.height), guide.height - 1);
+  return guide.steps[py * guide.width + px];
+}
+
+function isForestTerrain(entry, x, z, surfaceY, waterY) {
+  if (sampleForestGuideStep(entry, x, z) !== FOREST_SPAWN_GUIDE_STEP) return false;
   return surfaceY > waterY + TERRAIN_FOREST_WATER_CLEARANCE;
+}
+
+async function loadImagePixelData(url) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+    img.src = url;
+  });
+  const cv = document.createElement('canvas');
+  cv.width = img.width;
+  cv.height = img.height;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  return {
+    width: img.width,
+    height: img.height,
+    data: ctx.getImageData(0, 0, img.width, img.height).data,
+  };
+}
+
+function buildForestSpawnGuide(pixelData) {
+  const { width, height, data } = pixelData;
+  const steps = new Uint8Array(width * height);
+  for (let i = 0, p = 0; i < steps.length; i++, p += 4) {
+    const luma = (data[p] + data[p + 1] + data[p + 2]) / 3;
+    steps[i] = Math.round((luma / 255) * FOREST_SPAWN_GUIDE_MAX_STEP);
+  }
+  return { width, height, steps };
 }
 
 function sampleTerrainSurface(entry, x, z) {
@@ -418,13 +641,9 @@ function sampleTerrainSurface(entry, x, z) {
   const segments = entry._gridSegments;
   if (!segments || !heightNormAttr) return null;
 
-  const half = TERRAIN_SIZE / 2;
-  const lx = x - entry.mesh.position.x;
-  const lz = z - entry.mesh.position.z;
-  // PlaneGeometry stores verts as (x, -y, 0); after rotateX(-PI/2), row 0 → -Z, last → +Z.
-  const gx = (lx + half) / TERRAIN_SIZE;
-  const gz = (lz + half) / TERRAIN_SIZE;
-  if (gx < 0 || gx > 1 || gz < 0 || gz > 1) return null;
+  const grid = worldToTerrainGrid(entry, x, z);
+  if (!grid) return null;
+  const { gx, gz } = grid;
 
   const fx = gx * segments;
   const fz = gz * segments;
@@ -527,6 +746,8 @@ function disposeTerrainForestSystem(system) {
 async function buildAllTerrainForestChunksAsync(system, generation) {
   const keys = [...system.chunkBins.keys()];
   let index = 0;
+  const total = keys.length;
+  let builtTrees = 0;
 
   await new Promise((resolve) => {
     const step = () => {
@@ -543,7 +764,12 @@ async function buildAllTerrainForestChunksAsync(system, generation) {
         system.builtChunks.set(key, { key, trees, group });
         system.root.add(group);
         system.instancedMeshes.push(...group.userData.instancedMeshes);
+        builtTrees += trees.length;
         index++;
+      }
+      if (total > 0) {
+        const pct = Math.round((index / total) * 100);
+        loadingMgr.set('Forest build', 'Loading', `${pct}% · ${builtTrees.toLocaleString()} trees`);
       }
       if (index >= keys.length) {
         resolve(true);
@@ -566,49 +792,143 @@ function getForestDensityNoise(seed) {
 function forestRegionDensity(x, z, seed) {
   const fn = getForestDensityNoise(seed);
   const inv = 1 / Math.max(TERRAIN_SIZE, 1);
-  const region = fn.fbm(x * inv * 2.1 + seed * 0.017, z * inv * 2.1 + seed * 0.031, 3, 2.1, 0.52);
-  const clump = fn.fbm(x * inv * 15 + 90, z * inv * 15 + 140, 3, 2.4, 0.42);
-  const micro = fn.fbm(x * inv * 48 + 220, z * inv * 48 + 310, 2, 2.2, 0.5);
+  // Two-scale noise keeps clearings vs stands without 3 expensive FBMs per attempt.
+  const region = fn.fbm(x * inv * 1.35 + seed * 0.017, z * inv * 1.35 + seed * 0.031, 3, 2.05, 0.55);
+  const grove = fn.fbm(x * inv * 7.2 + 40, z * inv * 7.2 + 70, 2, 2.2, 0.5);
   const regionNorm = region * 0.5 + 0.5;
-  const clumpNorm = clump * 0.5 + 0.5;
-  const microNorm = micro * 0.5 + 0.5;
+  const groveNorm = grove * 0.5 + 0.5;
   if (regionNorm < TERRAIN_FOREST_BARE_CUTOFF) return 0;
-  const regionWeight = terrainSmoothstep(TERRAIN_FOREST_BARE_CUTOFF, 0.58, regionNorm);
-  const clumpWeight = terrainSmoothstep(0.18, 0.88, clumpNorm);
-  const clumpSharp = clumpWeight * clumpWeight * clumpWeight;
-  const microBoost = terrainSmoothstep(0.45, 0.92, microNorm);
-  return regionWeight * (0.12 + clumpSharp * (0.88 + microBoost * 0.12));
+  const regionWeight = terrainSmoothstep(TERRAIN_FOREST_BARE_CUTOFF, 0.78, regionNorm);
+  const groveWeight = terrainSmoothstep(0.28, 0.84, groveNorm);
+  const stand = regionWeight * regionWeight * (0.2 + groveWeight * groveWeight * 0.8);
+  return Math.min(1, stand * 1.35);
 }
 
 function forestPlacementChance(density) {
   if (density <= 0) return 0;
-  return Math.min(1, density * 0.95 + 0.62);
+  // Patchy, but dense stands place reliably so fill doesn't thrash.
+  return Math.min(1, density ** 1.35 * 0.98);
 }
 
-function scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed) {
-  const canopy = TERRAIN_FOREST_HEIGHT_MAX * 0.55;
-  const extraCount = Math.floor(cellRng() * (14 + density * density * 120));
-  const jitter = Math.min(spacing * (density > 0.75 ? 0.03 : density > 0.5 ? 0.05 : 0.08), canopy * 2.2);
+function collectForestGuideZoneIndices(guide, step = FOREST_SPAWN_GUIDE_STEP) {
+  const steps = guide?.steps;
+  if (!steps) return new Uint32Array(0);
+  let count = 0;
+  for (let i = 0; i < steps.length; i++) if (steps[i] === step) count++;
+  const idxs = new Uint32Array(count);
+  for (let i = 0, n = 0; i < steps.length; i++) {
+    if (steps[i] === step) idxs[n++] = i;
+  }
+  return idxs;
+}
+
+function worldFromForestGuideIndex(entry, index, rng) {
+  const guide = entry.forestGuide;
+  const w = guide.width;
+  const h = guide.height;
+  const px = index % w;
+  const py = (index / w) | 0;
+  const gx = (px + (rng ? rng() : 0.5)) / w;
+  const gz = (py + (rng ? rng() : 0.5)) / h;
+  const half = TERRAIN_SIZE * 0.5;
+  const mesh = entry.mesh;
+  return {
+    x: gx * TERRAIN_SIZE - half + (mesh?.position.x ?? 0),
+    z: gz * TERRAIN_SIZE - half + (mesh?.position.z ?? 0),
+  };
+}
+
+function createFoliageSpacingGrid() {
+  // Separate layers so tree spacing never forces a huge neighbor search over tiny grass cells.
+  return {
+    tree: {
+      cellSize: FOLIAGE_MIN_SPACING.tree,
+      minDistSq: (FOLIAGE_MIN_SPACING.tree * 0.92) ** 2,
+      cells: new Map(),
+    },
+    ground: {
+      cellSize: Math.min(
+        FOLIAGE_MIN_SPACING.grass,
+        FOLIAGE_MIN_SPACING.flower,
+        FOLIAGE_MIN_SPACING.plant,
+      ),
+      minDistSq: (Math.min(
+        FOLIAGE_MIN_SPACING.grass,
+        FOLIAGE_MIN_SPACING.flower,
+        FOLIAGE_MIN_SPACING.plant,
+      ) * 0.92) ** 2,
+      cells: new Map(),
+    },
+  };
+}
+
+function foliageSpacingLayer(grid, category) {
+  return category === 'tree' ? grid.tree : grid.ground;
+}
+
+function foliageCellKey(cx, cz) {
+  // Pack cell coords; terrain/cell counts stay well inside this range.
+  return (cx + 500000) * 1000003 + (cz + 500000);
+}
+
+function foliageSpacingFits(grid, x, z, category) {
+  const layer = foliageSpacingLayer(grid, category);
+  const cell = layer.cellSize;
+  const cx = Math.floor(x / cell);
+  const cz = Math.floor(z / cell);
+  const minDistSq = layer.minDistSq;
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const bucket = layer.cells.get(foliageCellKey(cx + dx, cz + dz));
+      if (!bucket) continue;
+      for (let i = 0, n = bucket.length; i < n; i += 2) {
+        const ddx = bucket[i] - x;
+        const ddz = bucket[i + 1] - z;
+        if (ddx * ddx + ddz * ddz < minDistSq) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function registerFoliageSpacing(grid, x, z, category) {
+  const layer = foliageSpacingLayer(grid, category);
+  const cell = layer.cellSize;
+  const key = foliageCellKey(Math.floor(x / cell), Math.floor(z / cell));
+  let bucket = layer.cells.get(key);
+  if (!bucket) {
+    bucket = [];
+    layer.cells.set(key, bucket);
+  }
+  bucket.push(x, z);
+}
+
+function scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed, templates, spacingGrid) {
+  const spread = Math.max(FOLIAGE_MIN_SPACING.tree * 2.2, spacing * 0.55);
+  const extraCount = Math.floor(2 + density * density * 10);
+  const jitter = Math.min(spacing * (0.35 + density * 0.45), spread);
   for (let e = 0; e < extraCount && countRef.value < targetCount; e++) {
     const jx = x + (cellRng() - 0.5) * jitter;
     const jz = z + (cellRng() - 0.5) * jitter;
-    const clumpDensity = forestRegionDensity(jx, jz, seed);
-    if (clumpDensity < density * 0.15) continue;
-    tryPlaceForestTree(entry, jx, jz, cellRng, chunkBins, waterY, countRef);
-  }
-
-  if (density > 0.45 && countRef.value < targetCount) {
-    const ultraCount = Math.floor(cellRng() * (24 + density * 60));
-    const ultraJitter = Math.min(spacing * 0.018, canopy * 1.1);
-    for (let e = 0; e < ultraCount && countRef.value < targetCount; e++) {
-      const jx = x + (cellRng() - 0.5) * ultraJitter;
-      const jz = z + (cellRng() - 0.5) * ultraJitter;
-      tryPlaceForestTree(entry, jx, jz, cellRng, chunkBins, waterY, countRef);
-    }
+    if (forestRegionDensity(jx, jz, seed) < density * 0.35) continue;
+    tryPlaceForestTree(entry, jx, jz, cellRng, chunkBins, waterY, countRef, templates, spacingGrid);
   }
 }
 
-function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef, stats = null) {
+function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef, templates, spacingGrid, stats = null, skipGuideCheck = false) {
+  // Guide first — cheapest reject for off-zone / clump jitter.
+  if (!skipGuideCheck && sampleForestGuideStep(entry, x, z) !== FOREST_SPAWN_GUIDE_STEP) {
+    if (stats) {
+      stats.samples++;
+      stats.outOfBand++;
+    }
+    return false;
+  }
+
+  if (spacingGrid && !foliageSpacingFits(spacingGrid, x, z, 'tree')) {
+    return false;
+  }
+
   const sample = sampleTerrainSurface(entry, x, z);
   if (stats) {
     stats.samples++;
@@ -618,51 +938,70 @@ function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef, s
     }
     stats.minH = Math.min(stats.minH, sample.heightNorm);
     stats.maxH = Math.max(stats.maxH, sample.heightNorm);
-    if (sample.heightNorm <= TERRAIN_FOREST_HEIGHT_NORM_MIN || sample.heightNorm >= TERRAIN_FOREST_HEIGHT_NORM_MAX) {
-      stats.outOfBand++;
-      return false;
-    }
     if (sample.y <= waterY + TERRAIN_FOREST_WATER_CLEARANCE) {
       stats.underwater++;
       return false;
     }
     stats.ok++;
-  } else if (!sample || !isForestTerrain(sample.heightNorm, sample.y, waterY)) {
+  } else if (!sample || sample.y <= waterY + TERRAIN_FOREST_WATER_CLEARANCE) {
     return false;
   }
+
+  const type = pickFoliageType(templates._typeWeights, cellRng);
+  const tmpl = templates[type];
+  const scale = THREE.MathUtils.lerp(tmpl.scaleMin, tmpl.scaleMax, cellRng());
   addTreeToChunkBin(chunkBins, {
     x,
     y: sample.y,
     z,
-    scale: THREE.MathUtils.lerp(TERRAIN_FOREST_HEIGHT_MIN, TERRAIN_FOREST_HEIGHT_MAX, cellRng()),
+    scale,
     spin: cellRng() * Math.PI * 2,
-    type: 0,
+    type,
   });
+  if (spacingGrid) registerFoliageSpacing(spacingGrid, x, z, 'tree');
   countRef.value++;
   return true;
 }
 
-async function generateMegaForestPlacementsAsync(entry, targetCount, seed, generation) {
+async function generateMegaForestPlacementsAsync(entry, targetCount, seed, generation, templates) {
   const waterY = entry.waterMesh?.position.y ?? HEIGHT_SCALE * TERRAIN_WATER_HEIGHT_NORM;
-  const half = TERRAIN_SIZE * 0.47;
-  const area = (half * 2) ** 2;
-  const spacing = Math.sqrt(area / Math.max(1, targetCount * 0.85));
+  const zoneIdx = collectForestGuideZoneIndices(entry.forestGuide);
+  const zoneCount = zoneIdx.length;
+  if (!zoneCount) {
+    console.warn('Forest guide has no zone-4 cells');
+    return { chunkBins: new Map(), count: 0, waterY };
+  }
+
+  const guide = entry.forestGuide;
+  const zoneFrac = zoneCount / Math.max(1, guide.width * guide.height);
+  const zoneArea = (TERRAIN_SIZE * TERRAIN_SIZE) * zoneFrac;
+  // Space against zone area only — avoids a huge empty world grid + endless fill.
+  const spacing = Math.sqrt(zoneArea / Math.max(1, targetCount * 1.05));
   const chunkBins = new Map();
   const countRef = { value: 0 };
-  const stats = { samples: 0, ok: 0, noSample: 0, underwater: 0, outOfBand: 0, minH: 1, maxH: 0 };
+  const spacingGrid = createFoliageSpacingGrid();
+  const stats = { samples: 0, ok: 0, noSample: 0, underwater: 0, outOfBand: 0, minH: 1, maxH: 0, zoneCount };
 
-  const tryPlace = (x, z, cellRng) => {
+  // Visit ~1.35x target zone cells so density + spacing can reject without a long fill.
+  const visitCount = Math.min(zoneCount, Math.ceil(targetCount * 1.35));
+  const stride = Math.max(1, Math.floor(zoneCount / visitCount));
+  let visit = 0;
+
+  const tryPlaceAt = (x, z, cellRng, withStats, allowClump) => {
     const density = forestRegionDensity(x, z, seed);
     if (density <= 0 || cellRng() > forestPlacementChance(density)) return false;
-    if (!tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef, stats)) return false;
-    if (density > 0.15) scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed);
+    if (!tryPlaceForestTree(
+      entry, x, z, cellRng, chunkBins, waterY, countRef, templates, spacingGrid,
+      withStats ? stats : null, true,
+    )) return false;
+    if (allowClump && density > 0.45) {
+      scatterDenseClump(
+        entry, x, z, density, spacing, cellRng, chunkBins, waterY,
+        countRef, targetCount, seed, templates, spacingGrid,
+      );
+    }
     return true;
   };
-
-  const cols = Math.ceil((half * 2) / spacing);
-  const rows = cols;
-  let ix = 0;
-  let iz = 0;
 
   await new Promise((resolve) => {
     const step = () => {
@@ -671,18 +1010,20 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
         return;
       }
       const start = performance.now();
-      while (iz < rows && countRef.value < targetCount && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS) {
-        const cellRng = mulberry32(seed + ix * 73856093 + iz * 19349663);
-        const x = -half + (ix + cellRng()) * spacing;
-        const z = -half + (iz + cellRng()) * spacing;
-        tryPlace(x, z, cellRng);
-        ix++;
-        if (ix >= cols) {
-          ix = 0;
-          iz++;
-        }
+      while (
+        visit < visitCount
+        && countRef.value < targetCount
+        && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS
+      ) {
+        const cellI = Math.min(zoneCount - 1, visit * stride);
+        const cellRng = mulberry32(seed + zoneIdx[cellI] * 2654435761);
+        const { x, z } = worldFromForestGuideIndex(entry, zoneIdx[cellI], cellRng);
+        tryPlaceAt(x, z, cellRng, true, true);
+        visit++;
       }
-      if (countRef.value >= targetCount || iz >= rows) {
+      const pct = Math.min(99, Math.round((countRef.value / Math.max(1, targetCount)) * 100));
+      loadingMgr.set('Forest placement', 'Loading', `${pct}% · ${countRef.value.toLocaleString()}`);
+      if (countRef.value >= targetCount || visit >= visitCount) {
         resolve(true);
         return;
       }
@@ -696,7 +1037,7 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
   if (countRef.value < targetCount) {
     const fillRng = mulberry32(seed + 99991);
     let fillAttempts = 0;
-    const fillMax = Math.max(targetCount * 40, 80000);
+    const fillMax = Math.min(targetCount * 6, zoneCount * 2);
     await new Promise((resolve) => {
       const step = () => {
         if (generation !== terrainForestBuildGeneration) {
@@ -710,14 +1051,12 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
           && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS
         ) {
           fillAttempts++;
-          const x = (fillRng() * 2 - 1) * half;
-          const z = (fillRng() * 2 - 1) * half;
-          const density = forestRegionDensity(x, z, seed);
-          if (density <= 0.06) continue;
-          if (fillRng() > Math.min(1, density * 0.95 + 0.35)) continue;
-          if (!tryPlaceForestTree(entry, x, z, fillRng, chunkBins, waterY, countRef)) continue;
-          if (density > 0.2) scatterDenseClump(entry, x, z, density, spacing, fillRng, chunkBins, waterY, countRef, targetCount, seed);
+          const idx = zoneIdx[(fillRng() * zoneCount) | 0];
+          const { x, z } = worldFromForestGuideIndex(entry, idx, fillRng);
+          tryPlaceAt(x, z, fillRng, false, true);
         }
+        const pct = Math.min(99, Math.round((countRef.value / Math.max(1, targetCount)) * 100));
+        loadingMgr.set('Forest placement', 'Loading', `Fill ${pct}% · ${countRef.value.toLocaleString()}`);
         if (countRef.value >= targetCount || fillAttempts >= fillMax) {
           resolve();
           return;
@@ -731,7 +1070,8 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
   if (countRef.value < targetCount) {
     const topUpRng = mulberry32(seed + 77777);
     let topUpAttempts = 0;
-    const topUpMax = Math.max((targetCount - countRef.value) * 40, 100000);
+    const need = targetCount - countRef.value;
+    const topUpMax = Math.min(need * 8, zoneCount);
     await new Promise((resolve) => {
       const step = () => {
         if (generation !== terrainForestBuildGeneration) {
@@ -745,9 +1085,14 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
           && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS
         ) {
           topUpAttempts++;
-          const x = (topUpRng() * 2 - 1) * half;
-          const z = (topUpRng() * 2 - 1) * half;
-          tryPlaceForestTree(entry, x, z, topUpRng, chunkBins, waterY, countRef);
+          const idx = zoneIdx[(topUpRng() * zoneCount) | 0];
+          const { x, z } = worldFromForestGuideIndex(entry, idx, topUpRng);
+          const density = forestRegionDensity(x, z, seed);
+          if (density < 0.32 || topUpRng() > forestPlacementChance(density)) continue;
+          tryPlaceForestTree(
+            entry, x, z, topUpRng, chunkBins, waterY, countRef, templates, spacingGrid,
+            null, true,
+          );
         }
         if (countRef.value >= targetCount || topUpAttempts >= topUpMax) {
           resolve();
@@ -761,22 +1106,30 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
 
   if (generation !== terrainForestBuildGeneration) return null;
   console.info(`Forest placed ${countRef.value.toLocaleString()} / ${targetCount.toLocaleString()} trees`, stats);
-  window.__forestDebug = { count: countRef.value, target: targetCount, waterY, stats };
+  window.__forestDebug = { count: countRef.value, target: targetCount, waterY, stats, zoneFrac };
   return { chunkBins, count: countRef.value, waterY };
 }
 
-function pickForestSpawnTree(chunkBins) {
+function pickForestSpawnTree(chunkBins, templates) {
   let bestTrees = null;
   for (const trees of chunkBins.values()) {
     if (!bestTrees || trees.length > bestTrees.length) bestTrees = trees;
   }
   if (!bestTrees?.length) return null;
-  // Prefer a tree near the densest chunk center so the player starts in a grove.
-  const cx = bestTrees.reduce((s, t) => s + t.x, 0) / bestTrees.length;
-  const cz = bestTrees.reduce((s, t) => s + t.z, 0) / bestTrees.length;
-  let best = bestTrees[0];
+  const treeTypes = new Set(
+    (templates || [])
+      .map((t, i) => (t.category === 'tree' ? i : -1))
+      .filter((i) => i >= 0),
+  );
+  const candidates = treeTypes.size
+    ? bestTrees.filter((t) => treeTypes.has(t.type))
+    : bestTrees;
+  const pool = candidates.length ? candidates : bestTrees;
+  const cx = pool.reduce((s, t) => s + t.x, 0) / pool.length;
+  const cz = pool.reduce((s, t) => s + t.z, 0) / pool.length;
+  let best = pool[0];
   let bestDist = Infinity;
-  for (const tree of bestTrees) {
+  for (const tree of pool) {
     const d = (tree.x - cx) ** 2 + (tree.z - cz) ** 2;
     if (d < bestDist) {
       bestDist = d;
@@ -798,7 +1151,7 @@ function findForestSpawn(entry, seed) {
     const density = forestRegionDensity(x, z, seed);
     if (density < 0.2) continue;
     const sample = sampleTerrainSurface(entry, x, z);
-    if (!sample || !isForestTerrain(sample.heightNorm, sample.y, waterY)) continue;
+    if (!sample || !isForestTerrain(entry, x, z, sample.y, waterY)) continue;
     const score = density * sample.heightNorm;
     if (score > bestScore) {
       bestScore = score;
@@ -819,18 +1172,21 @@ async function buildTerrainForest() {
     terrainForestSystem = null;
   }
 
-  setStatus('Loading forest models…');
+  loadingMgr.set('Forest models', 'Loading');
   const templates = await loadForestTreeTemplates();
+  loadingMgr.set('Forest models', 'Complete');
   if (generation !== terrainForestBuildGeneration) return;
 
-  setStatus('Generating forest…');
+  loadingMgr.set('Forest placement', 'Loading');
   const result = await generateMegaForestPlacementsAsync(
     terrainEntry,
     FOREST_TREE_COUNT,
     FOREST_SEED,
     generation,
+    templates,
   );
   if (!result || generation !== terrainForestBuildGeneration) return;
+  loadingMgr.set('Forest placement', 'Complete', `${result.count.toLocaleString()} trees`);
 
   const system = {
     root: new THREE.Group(),
@@ -839,14 +1195,15 @@ async function buildTerrainForest() {
     templates,
     instancedMeshes: [],
     totalCount: result.count,
-    spawnTree: pickForestSpawnTree(result.chunkBins),
+    spawnTree: pickForestSpawnTree(result.chunkBins, templates),
   };
 
   terrainForestSystem = system;
   terrainGroup.add(system.root);
 
-  setStatus(`Building forest… ${result.count.toLocaleString()} trees`);
+  loadingMgr.set('Forest build', 'Loading', `0 / ${result.count.toLocaleString()}`);
   await buildAllTerrainForestChunksAsync(system, generation);
+  loadingMgr.set('Forest build', 'Complete', `${result.count.toLocaleString()} trees`);
   window.__forestDebug = {
     ...(window.__forestDebug || {}),
     chunks: system.builtChunks.size,
@@ -1026,8 +1383,10 @@ function isMoving() {
 
 const TARGET_Y_LERP = 8;
 const CAMERA_TARGET_HEIGHT = 0.88;
+const MAP_DISTANCE = TERRAIN_SIZE * 1.15;
 const _camDelta = new THREE.Vector3();
 const _camRayDir = new THREE.Vector3();
+let mapView = false;
 
 function cameraTargetY(pos, h) {
   return pos.y + h * CAMERA_TARGET_HEIGHT;
@@ -1041,14 +1400,40 @@ function frameCameraChar() {
   camera.position.set(pos.x, targetY + h, pos.z - h * 3);
   controls.minDistance = Math.max(5, h * 0.8);
   controls.maxDistance = Math.max(h * 20, controls.minDistance + 1);
+  controls.minPolarAngle = 0;
+  controls.maxPolarAngle = Math.PI * 0.49;
   camera.near = Math.max(0.1, h * 0.1);
   camera.updateProjectionMatrix();
   resolveCameraCollision(h);
   syncSkyToCamera();
 }
 
+function setMapView(open) {
+  if (!character || mapView === open) return;
+  mapView = open;
+  keys.KeyW = keys.KeyA = keys.KeyS = keys.KeyD = false;
+  if (open) {
+    const mapY = HEIGHT_SCALE * 0.3;
+    controls.target.set(0, mapY, 0);
+    camera.position.set(0, mapY + MAP_DISTANCE, 1);
+    controls.minDistance = MAP_DISTANCE * 0.35;
+    controls.maxDistance = MAP_DISTANCE * 1.4;
+    controls.minPolarAngle = 0;
+    controls.maxPolarAngle = Math.PI * 0.35;
+    controls.enablePan = true;
+    controls.enableRotate = false;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
+    syncSkyToCamera();
+  } else {
+    controls.enablePan = false;
+    controls.enableRotate = true;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
+    frameCameraChar();
+  }
+}
+
 function resolveCameraCollision(h) {
-  if (!terrainMesh) return;
+  if (!terrainMesh || mapView) return;
   const target = controls.target;
   const dist = camera.position.distanceTo(target);
   if (dist < 1e-6) return;
@@ -1063,6 +1448,7 @@ function resolveCameraCollision(h) {
 }
 
 function followCamera(delta) {
+  if (mapView) return;
   const h = character.height;
   const pos = character.group.position;
   const idealTargetY = cameraTargetY(pos, h);
@@ -1077,7 +1463,7 @@ function followCamera(delta) {
 }
 
 function updateCameraCollision() {
-  if (!character) return;
+  if (!character || mapView) return;
   resolveCameraCollision(character.height);
 }
 
@@ -1085,6 +1471,9 @@ function updateCameraCollision() {
 
 window.addEventListener('keydown', (e) => {
   if (!character) return;
+  if (e.code === 'KeyM' && !e.repeat) { setMapView(!mapView); return; }
+  if (e.code === 'Escape' && mapView) { setMapView(false); return; }
+  if (mapView) return;
   if (e.code in keys) { keys[e.code] = true; return; }
   if (e.repeat) return;
   if (e.code === 'Space') { e.preventDefault(); triggerJump(); }
@@ -1338,25 +1727,23 @@ diffuseColor *= getTerrainColor(vMapUv, vHeightNorm);
   material.needsUpdate = true;
 }
 
-// ---------- Terrain (JPG heightmap) ----------
+// ---------- Terrain (PNG heightmap) ----------
 
 async function loadTerrain() {
-  setStatus('Loading terrain…');
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  await new Promise((resolve, reject) => {
-    img.onload = resolve;
-    img.onerror = () => reject(new Error('Failed to load heightmap image'));
-    img.src = './n40_w090_1arc_v3.jpg';
-  });
+  loadingMgr.set('Heightmap', 'Loading');
+  const heightPixels = await loadImagePixelData(TERRAIN_HEIGHTMAP_URL);
+  loadingMgr.set('Heightmap', 'Complete');
 
-  const cv = document.createElement('canvas');
-  const sampleSize = Math.min(img.width, img.height, 2048);
-  cv.width = sampleSize;
-  cv.height = sampleSize;
-  const ctx = cv.getContext('2d');
-  ctx.drawImage(img, 0, 0, sampleSize, sampleSize);
-  const { data } = ctx.getImageData(0, 0, sampleSize, sampleSize);
+  loadingMgr.set('Forest guide', 'Loading');
+  const guidePixels = await loadImagePixelData(FOREST_SPAWN_GUIDE_URL);
+  const forestGuide = buildForestSpawnGuide(guidePixels);
+  loadingMgr.set('Forest guide', 'Complete');
+
+  loadingMgr.set('Terrain', 'Loading', 'Building mesh…');
+  const sampleSize = Math.min(heightPixels.width, heightPixels.height, 2048);
+  const data = heightPixels.data;
+  const srcW = heightPixels.width;
+  const srcH = heightPixels.height;
 
   const segments = Math.min(sampleSize - 1, 511);
   const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, segments, segments);
@@ -1368,15 +1755,15 @@ async function loadTerrain() {
   let minH = Infinity, maxH = -Infinity;
   const heights = new Float32Array(pos.count);
   const decodeHeight = (r, g, b) => {
-    // Grayscale JPG DEM: use luma. Packed 24-bit RGB elevation: full range.
+    // Grayscale PNG/JPG DEM: use luma. Packed 24-bit RGB elevation: full range.
     const maxDiff = Math.max(Math.abs(r - g), Math.abs(r - b), Math.abs(g - b));
     if (maxDiff <= 2) return r / 255;
     return (r * 65536 + g * 256 + b) / 16777215;
   };
   for (let i = 0; i < pos.count; i++) {
-    const px = Math.min(Math.floor(uv.getX(i) * sampleSize), sampleSize - 1);
-    const py = Math.min(Math.floor((1 - uv.getY(i)) * sampleSize), sampleSize - 1);
-    const idx = (py * sampleSize + px) * 4;
+    const px = Math.min(Math.floor(uv.getX(i) * srcW), srcW - 1);
+    const py = Math.min(Math.floor((1 - uv.getY(i)) * srcH), srcH - 1);
+    const idx = (py * srcW + px) * 4;
     const h = decodeHeight(data[idx], data[idx + 1], data[idx + 2]);
     heights[i] = h;
     if (h < minH) minH = h;
@@ -1396,8 +1783,11 @@ async function loadTerrain() {
   }
   geometry.setAttribute('heightNorm', new THREE.BufferAttribute(heightNorm, 1));
 
-  setStatus('Loading terrain textures…');
+  loadingMgr.set('Terrain textures', 'Loading');
   const textureSets = await loadTerrainTextureSets();
+  loadingMgr.set('Terrain textures', 'Complete');
+
+  loadingMgr.set('Terrain', 'Loading', 'Materials & collision…');
   const material = new THREE.MeshStandardMaterial({
     roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide,
     polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
@@ -1438,14 +1828,16 @@ async function loadTerrain() {
     group,
     mesh,
     waterMesh,
+    forestGuide,
     _gridSegments: segments,
   };
+  loadingMgr.set('Terrain', 'Complete');
 }
 
 // ---------- Character loading ----------
 
 async function loadCharacter() {
-  setStatus('Loading character…');
+  loadingMgr.set('Character', 'Loading');
   const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
   const { DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js');
   const draco = new DRACOLoader();
@@ -1504,20 +1896,21 @@ async function loadCharacter() {
     if (h !== null) group.position.y = h + Math.max(0.05, height * 0.02);
   }
   frameCameraChar();
+  loadingMgr.set('Character', 'Complete');
 }
 
 // ---------- Init ----------
 
 async function init() {
+  loadingMgr.init(LOAD_STEPS);
   try {
     await loadTerrain();
     await buildTerrainForest();
     await loadCharacter();
-    setStatus('');
-    loadingEl.classList.add('hidden');
+    loadingMgr.hide();
   } catch (err) {
     console.error(err);
-    setStatus('Failed: ' + err.message, true);
+    loadingMgr.fail(err);
   }
 }
 init();
