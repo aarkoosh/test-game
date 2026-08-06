@@ -5,35 +5,183 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Demo Game</title>
 <style>
-body{margin:0;overflow:hidden;background:#0e1117;}
+body{margin:0;overflow:hidden;background:#05070c;}
 canvas{display:block;}
+
+/* Shared frosted dark glass */
+.glass{
+  background:
+    linear-gradient(165deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.04) 38%, rgba(255,255,255,0.02) 100%),
+    rgba(8, 12, 20, 0.28);
+  border:1px solid rgba(255,255,255,0.22);
+  border-top-color:rgba(255,255,255,0.38);
+  border-bottom-color:rgba(255,255,255,0.08);
+  backdrop-filter:blur(40px) saturate(160%) brightness(1.05);
+  -webkit-backdrop-filter:blur(40px) saturate(160%) brightness(1.05);
+  box-shadow:
+    0 12px 40px rgba(0,0,0,0.55),
+    0 0 0 1px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.28),
+    inset 0 -1px 0 rgba(0,0,0,0.25);
+}
+
 #loading{
   position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-  background:#0e1117;z-index:20;transition:opacity 0.4s;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% 35%, rgba(70,90,130,0.35) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(40,60,90,0.25) 0%, transparent 50%),
+    linear-gradient(180deg, #1a2030 0%, #080b12 100%);
+  z-index:20;transition:opacity 0.4s;
 }
 #loading.hidden{opacity:0;pointer-events:none;}
-#loading-panel{min-width:320px;max-width:min(440px,92vw);}
+#loading-panel{
+  min-width:320px;max-width:min(440px,92vw);
+  padding:22px 24px;
+  border-radius:20px;
+}
 #loading-title{
-  font:600 14px/1.5 system-ui,sans-serif;color:rgba(255,255,255,0.6);
+  font:600 14px/1.5 system-ui,sans-serif;color:rgba(255,255,255,0.55);
   margin-bottom:16px;letter-spacing:0.03em;text-transform:uppercase;
 }
 #loading.error #loading-title{color:#f87171;}
 #loading-items{display:flex;flex-direction:column;gap:6px;}
 .loading-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:4px 0;}
-.loading-name{font:500 12px/1.4 system-ui,sans-serif;color:rgba(255,255,255,0.7);}
+.loading-name{font:500 12px/1.4 system-ui,sans-serif;color:rgba(255,255,255,0.78);}
 .loading-status{font:600 11px/1.4 ui-monospace,monospace;color:rgba(255,255,255,0.35);text-align:right;}
 .loading-status.pending{color:rgba(255,255,255,0.35);}
-.loading-status.loading{color:#64b5f6;}
+.loading-status.loading{color:rgba(255,255,255,0.9);}
 .loading-status.complete{color:#4ade80;}
 .loading-status.error{color:#f87171;}
+
+#skill-bar{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+  display:flex;gap:10px;z-index:10;
+  padding:10px;
+  border-radius:22px;
+}
+.skill-slot{
+  position:relative;width:54px;height:54px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.2);
+  border-top-color:rgba(255,255,255,0.4);
+  border-radius:14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.25),
+    inset 0 -8px 16px rgba(0,0,0,0.18);
+  transition:background 0.15s,border-color 0.15s,box-shadow 0.15s,transform 0.15s;
+}
+.skill-slot svg{width:30px;height:30px;stroke:#fff;fill:none;filter:drop-shadow(0 0 6px rgba(255,255,255,0.35));}
+.skill-slot:hover{
+  background:rgba(255,255,255,0.18);
+  border-color:rgba(255,255,255,0.45);
+  border-top-color:rgba(255,255,255,0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.4),
+    0 0 24px rgba(255,255,255,0.12);
+  transform:translateY(-1px);
+}
+.skill-tooltip{
+  position:absolute;bottom:calc(100% + 16px);left:50%;transform:translateX(-50%);
+  border-radius:14px;padding:10px 14px;white-space:nowrap;text-align:left;
+  font:500 12px/1.6 system-ui,sans-serif;color:rgba(255,255,255,0.88);
+  opacity:0;pointer-events:none;transition:opacity 0.12s;
+  z-index:11;
+}
+.skill-slot:hover .skill-tooltip{opacity:1;}
+.skill-tooltip .skill-name{font-weight:700;color:#fff;}
+#skill-bar.hidden{display:none;}
+
+#map-editor{
+  position:fixed;top:16px;right:16px;bottom:16px;width:min(340px,92vw);
+  z-index:15;display:flex;flex-direction:column;gap:0;
+  border-radius:20px;overflow:hidden;pointer-events:auto;
+}
+#map-editor.hidden{display:none;}
+#map-editor-header{
+  flex:0 0 auto;padding:14px 16px;
+  border-bottom:1px solid rgba(255,255,255,0.12);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  font:600 13px/1.3 system-ui,sans-serif;color:rgba(255,255,255,0.92);
+  letter-spacing:0.02em;
+  background:linear-gradient(180deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.02) 100%);
+}
+#map-editor-reset{
+  flex:0 0 auto;cursor:pointer;
+  border:1px solid rgba(255,255,255,0.22);
+  border-top-color:rgba(255,255,255,0.4);
+  background:rgba(255,255,255,0.1);
+  color:rgba(255,255,255,0.9);
+  border-radius:11px;padding:6px 12px;
+  font:600 11px/1 system-ui,sans-serif;letter-spacing:0.02em;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.25);
+  transition:background 0.15s,border-color 0.15s;
+}
+#map-editor-reset:hover{
+  background:rgba(255,255,255,0.2);border-color:rgba(255,255,255,0.4);
+}
+#map-editor-body{flex:1 1 auto;overflow:auto;padding:10px 16px 18px;}
+#map-editor .section-title{
+  font:600 11px/1.2 system-ui,sans-serif;color:rgba(255,255,255,0.42);
+  text-transform:uppercase;letter-spacing:0.04em;margin:14px 0 8px;
+}
+#map-editor .section-title:first-child{margin-top:4px;}
+#map-editor .slider-row{margin-bottom:10px;}
+#map-editor .slider-row label{
+  display:flex;justify-content:space-between;align-items:center;
+  font:500 12px/1 system-ui,sans-serif;color:rgba(255,255,255,0.75);margin-bottom:4px;
+}
+#map-editor .slider-row output{
+  font:600 12px/1 ui-monospace,monospace;color:rgba(255,255,255,0.95);
+}
+#map-editor .slider-row input[type=range]{
+  width:100%;height:4px;appearance:none;border-radius:999px;
+  background:rgba(255,255,255,0.14);outline:none;cursor:pointer;
+}
+#map-editor .slider-row input[type=range]::-webkit-slider-thumb{
+  appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;
+  border:2px solid rgba(255,255,255,0.45);box-shadow:0 2px 10px rgba(0,0,0,0.45);
+}
+#map-editor .slider-row input[type=range]::-moz-range-thumb{
+  width:14px;height:14px;border-radius:50%;background:#fff;
+  border:2px solid rgba(255,255,255,0.45);box-shadow:0 2px 10px rgba(0,0,0,0.45);
+}
+#map-editor .toggle-row{
+  display:flex;align-items:center;gap:8px;margin-bottom:10px;
+}
+#map-editor .toggle-row label{
+  font:500 12px/1 system-ui,sans-serif;color:rgba(255,255,255,0.75);flex:1;margin:0;
+}
+#map-editor .toggle-row input[type=checkbox]{accent-color:#fff;}
 </style>
 </head>
 <body>
 <div id="loading">
-  <div id="loading-panel">
+  <div id="loading-panel" class="glass">
     <div id="loading-title">Loading…</div>
     <div id="loading-items"></div>
   </div>
+</div>
+<div id="skill-bar" class="glass">
+  <div class="skill-slot" id="skill-teleport">
+    <svg viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <ellipse cx="12" cy="12" rx="5.5" ry="9"/>
+      <ellipse cx="12" cy="12" rx="2.4" ry="5.2"/>
+      <path d="M3.2 4.4h.01M4.8 8.2h.01M20.8 15.8h.01M19.2 19.6h.01"/>
+    </svg>
+    <div class="skill-tooltip glass">
+      <div class="skill-name">Teleport</div>
+      <div>Spell</div>
+      <div>Hotkey: 1</div>
+    </div>
+  </div>
+</div>
+<div id="map-editor" class="glass hidden">
+  <div id="map-editor-header">
+    <span>Map Editor</span>
+    <button type="button" id="map-editor-reset">Reset</button>
+  </div>
+  <div id="map-editor-body"></div>
 </div>
 <script type="importmap">
 {
@@ -60,7 +208,7 @@ const TERRAIN_SIZE = 950000;
 const HEIGHT_SCALE = 25000;
 const FLOOR_BOUND = TERRAIN_SIZE * 0.48 - 20;
 const SKY_SCALE = 10000;
-const SKY_ANIM_SPEED = 3;
+let SKY_ANIM_SPEED = 3;
 const JUMP_VELOCITY = 42;
 const JUMP_GRAVITY = 78;
 
@@ -70,10 +218,40 @@ const FOREST_TREE_COUNT = 350000;
 const FOREST_SEED = 42;
 const TERRAIN_HEIGHTMAP_URL = './heightmapdefault.png';
 const FOREST_SPAWN_GUIDE_URL = './heightmap6step.png';
-const FOREST_SPAWN_GUIDE_STEP = 4;
+// Six greys -> six zones (1=black ... 6=white). One zone per color.
+const FOREST_SPAWN_GUIDE_STEP = 4; // player spawn among zone-4 canopy trees
 const FOREST_SPAWN_GUIDE_MAX_STEP = 6;
+const FOREST_GUIDE_COLORS = [
+  { gray: 0, zone: 1 },   // #000000
+  { gray: 51, zone: 2 },  // #333333
+  { gray: 102, zone: 3 }, // #666666
+  { gray: 153, zone: 4 }, // #999999
+  { gray: 204, zone: 5 }, // #cccccc
+  { gray: 255, zone: 6 }, // #ffffff
+];
 const TERRAIN_WATER_HEIGHT_NORM = 0.2;
-const TERRAIN_FOREST_WATER_CLEARANCE = HEIGHT_SCALE * 0.03;
+const TERRAIN_FOREST_WATER_CLEARANCE = HEIGHT_SCALE * 0.0008;
+const TERRAIN_FOLIAGE_ALLOW_UNDERWATER = true;
+const WATER_SEGMENTS = 384;
+const WATER_DEFAULTS = {
+  opacity: 0.94,
+  waveHeight: 1,
+  waveScale: 1,
+  foamStrength: 1,
+  sssStrength: 1.2,
+  reflection: 1,
+  specular: 1.8,
+  roughness: 0.035,
+  absorption: 0.55,
+  distortion: 0.35,
+  deepColor: 0x021526,
+  shallowColor: 0x1aa0a8,
+  foamColor: 0xf2fbff,
+};
+const WATER_REFLECT_SIZE = 768;
+const TERRAIN_FOREST_MAX_SLOPE_DEG = 38;
+const TERRAIN_FOREST_MIN_SLOPE_COS = Math.cos((TERRAIN_FOREST_MAX_SLOPE_DEG * Math.PI) / 180);
+const TERRAIN_HEIGHT_SMOOTH_PASSES = 3;
 const TERRAIN_FOREST_CHUNK_SIZE = 400 * FOREST_SIZE_SCALE;
 const TERRAIN_FOREST_PLACEMENT_BATCH_MS = 18;
 const TERRAIN_FOREST_BUILD_BATCH_MS = 12;
@@ -81,24 +259,92 @@ const TERRAIN_FOREST_BARE_CUTOFF = 0.28;
 const FOLIAGE_PACK_URL = './low_poly_trees_flowers_and_grass.glb';
 const FOLIAGE_SCALE = {
   tree: { min: HEIGHT_SCALE * 0.02, max: HEIGHT_SCALE * 0.048 },
-  grass: { min: HEIGHT_SCALE * 0.0012, max: HEIGHT_SCALE * 0.0035 },
-  flower: { min: HEIGHT_SCALE * 0.001, max: HEIGHT_SCALE * 0.0028 },
-  plant: { min: HEIGHT_SCALE * 0.0014, max: HEIGHT_SCALE * 0.004 },
+  grass: { min: HEIGHT_SCALE * 0.0036, max: HEIGHT_SCALE * 0.010 },
+  flower: { min: HEIGHT_SCALE * 0.0012, max: HEIGHT_SCALE * 0.003 },
+  plant: { min: HEIGHT_SCALE * 0.0025, max: HEIGHT_SCALE * 0.007 },
 };
-const FOLIAGE_SPAWN_WEIGHT = {
-  tree: 1,
-  grass: 0,
-  flower: 0,
-  plant: 0,
-};
-// Zone-4 forest trees: only stylized 03 / 04 / 05 (skip 01 and dry 02).
-const FOREST_ZONE4_TREE_NAME_RE = /tree-stylized-0[345]\b/i;
 const FOLIAGE_MIN_SPACING = {
   tree: FOLIAGE_SCALE.tree.min * 0.65,
-  grass: FOLIAGE_SCALE.grass.min * 1.1,
-  flower: FOLIAGE_SCALE.flower.min * 1.0,
-  plant: FOLIAGE_SCALE.plant.min * 1.05,
+  grass: HEIGHT_SCALE * 0.0038,
+  flower: HEIGHT_SCALE * 0.0022,
+  plant: HEIGHT_SCALE * 0.0045,
 };
+const FOLIAGE_GROUND_SINK = {
+  tree: 0.03,
+  grass: 0.18,
+  flower: 0.14,
+  plant: 0.16,
+};
+// Lean totals (~1.7M): ground cover uses fast path; trees capped.
+const FOLIAGE_ZONE_RULES = [
+  {
+    step: 1,
+    label: 'zone1',
+    fast: true,
+    maxCount: 700000,
+    fill: 0.98,
+    spacing: FOLIAGE_MIN_SPACING.grass,
+    entries: [{ name: 'grass-bushes-02', weight: 1 }],
+  },
+  {
+    step: 2,
+    label: 'zone2',
+    fast: true,
+    maxCount: 650000,
+    fill: 0.95,
+    spacing: FOLIAGE_MIN_SPACING.grass,
+    entries: [
+      { name: 'grass-bushes-02', weight: 0.78 },
+      { name: 'plant-ground-green-01', weight: 0.22 },
+    ],
+  },
+  {
+    step: 3,
+    label: 'zone3',
+    fast: true,
+    maxCount: 550000,
+    fill: 0.92,
+    spacing: FOLIAGE_MIN_SPACING.grass,
+    entries: [
+      { name: 'grass-bushes-01', weight: 0.74 },
+      { name: 'tree-stylized-01', weight: 0.05 },
+      { name: 'daffodil-flower-01', weight: 0.105 },
+      { name: 'daffodil-flower-02', weight: 0.105 },
+    ],
+  },
+  {
+    step: 4,
+    label: 'zone4',
+    fast: false,
+    maxCount: FOREST_TREE_COUNT,
+    fill: 1.0,
+    spacing: FOLIAGE_MIN_SPACING.tree,
+    bareCutoff: TERRAIN_FOREST_BARE_CUTOFF,
+    densityPower: 1.35,
+    clumpThreshold: 0.45,
+    clumpExtra: 6,
+    groupOnly: false,
+    entries: [
+      { name: 'tree-stylized-03', weight: 1 },
+      { name: 'tree-stylized-04', weight: 1 },
+      { name: 'tree-stylized-05', weight: 1 },
+    ],
+  },
+  {
+    step: 5,
+    label: 'zone5',
+    fast: false,
+    maxCount: 32000,
+    fill: 0.2,
+    spacing: FOLIAGE_MIN_SPACING.tree * 1.35,
+    bareCutoff: 0.40,
+    densityPower: 1.55,
+    clumpThreshold: 0.52,
+    clumpExtra: 8,
+    groupOnly: true,
+    entries: [{ name: 'tree-stylized-02-dry', weight: 1 }],
+  },
+];
 
 const loadingEl = document.getElementById('loading');
 const loadingTitleEl = document.getElementById('loading-title');
@@ -165,6 +411,35 @@ const sunParams = {
   cloudScale: 0.0002, cloudSpeed: 0.00045,
 };
 const skySunDir = new THREE.Vector3();
+let cloudSystem1Enabled = true;
+let volCloudsEnabled = true;
+let terrainReliefScale = 1;
+let terrainHeightShift = 0;
+let appliedTerrainReliefScale = 1;
+let appliedTerrainHeightShift = 0;
+let terrainWaterHeightNorm = TERRAIN_WATER_HEIGHT_NORM;
+let mapEditorOpen = false;
+let updateSunThrottleId = 0;
+let terrainVerticalThrottleId = 0;
+let terrainTextureScale = 48;
+let terrainProcNoise = null;
+const terrainHillParams = { height: 0, spacing: 100, rolling: 1, dunes: 1, detail: 1, displacement: 0.5, freqX: 1, freqZ: 1 };
+let terrainNoiseOctaves = 4;
+let terrainNoiseLacunarity = 2;
+let terrainNoisePersistence = 0.5;
+let terrainNoiseSeed = 0;
+let terrainHeightRedistribution = 1;
+let terrainWarpStrength = 0;
+let terrainCrustFactor = 0;
+let terrainTectonicFactor = 0;
+let terrainMountainBorderMode = false;
+let terrainMbRadius = 40;
+let terrainMbWidth = 15;
+let terrainMbHeight = 100;
+let terrainMbIrregularity = 30;
+let terrainWaterBorder = 0;
+let terrainProcUpdatePending = false;
+let forestRestickThrottleId = 0;
 
 const scene = new THREE.Scene();
 scene.background = null;
@@ -199,14 +474,24 @@ function applySkyUniforms() {
   skyUniforms.rayleigh.value = sunParams.rayleigh;
   skyVisUniforms.turbidity.value = sunParams.turbidity;
   skyVisUniforms.rayleigh.value = sunParams.rayleigh;
+  const coverage = cloudSystem1Enabled ? sunParams.cloudCoverage : 0;
+  const density = cloudSystem1Enabled ? sunParams.cloudDensity : 0;
   for (const u of [skyUniforms, skyVisUniforms]) {
-    u.cloudCoverage.value = sunParams.cloudCoverage;
-    u.cloudDensity.value = sunParams.cloudDensity;
+    u.cloudCoverage.value = coverage;
+    u.cloudDensity.value = density;
     u.cloudElevation.value = sunParams.cloudElevation;
     u.cloudScale.value = sunParams.cloudScale;
     u.cloudSpeed.value = sunParams.cloudSpeed;
   }
   renderer.toneMappingExposure = sunParams.exposure;
+}
+
+function scheduleUpdateSun() {
+  if (updateSunThrottleId) return;
+  updateSunThrottleId = setTimeout(() => {
+    updateSunThrottleId = 0;
+    updateSun();
+  }, 80);
 }
 
 function syncSkyToCamera() {
@@ -252,7 +537,8 @@ controls.enablePan = false;
 controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+scene.add(ambient);
 const sun = new THREE.DirectionalLight(0xfff4e6, 1.8);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -268,6 +554,843 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 updateSun();
+
+// ---------- Volumetric low cloud layer ----------
+// Second, independent cloud deck sitting below the Sky shader's projective FBM
+// clouds. Raymarched volumetric slab adapted from leoawen's
+// "volumetric_cloud_atmosphere_scattering" demo (MIT), reworked for a flat
+// world, the game's logarithmic depth buffer, and single-file integration.
+// The existing Sky cloud system (sunParams.cloud*) is untouched.
+
+const VOL_CLOUDS = {
+  baseY: HEIGHT_SCALE * 0.48,
+  height: HEIGHT_SCALE * 0.18,
+  renderScale: 0.5,
+  baseResolution: 128,
+  detailResolution: 32,
+  weatherResolution: 64,
+  cloudScale: 2e-5,     // world units -> base noise UVW
+  weatherScale: 2e-6,   // world units -> weather map UV
+  detailScale: 10.0,
+  erosionStrength: 0.3,
+  lodDistance: 600000,
+  baseLodMaxDist: 500000,
+  baseLodMaxLevel: 4.0,
+  coverage: 1.0,
+  densityScale: 1.0,
+  absorp: 14.0,
+  threshold: 0.0,
+  edgeSoftness: 0.2,
+  shadowOffset: 500.0,
+  skylightAbsorption: 0.0,
+  powderScale: 1.0,
+  powderIntensity: 1.0,
+  phaseIntensity: 3.0,
+  phaseG: 0.6,
+  opacityClamp: 0.99,
+  sunIntensity: 10.0,
+  ambientScale: 3.0,
+  steps: 56,
+  maxIterations: 384,
+  initialStep: 150.0,
+  stepGrowth: 1.015,
+  maxStep: 1600.0,
+  spaceSkipRatio: 1.4,
+  maxDistance: 400000.0,
+  wind: { x: 0.0008, y: -0.0004, z: 0.0005 },
+  gen: {
+    layer1: { repeat: 2, scale: 1.0, seed: 0.0 },
+    layer2: { repeat: 8, scale: 1.0, seed: 0.1 },
+    mixStrength: 0.3,
+    erosion: 0.3,
+    contrast: 1.8,
+    detail: { scaleR: 2.0, scaleG: 4.0, scaleB: 8.0, seed: 0.2 },
+  },
+  weather: { scaleR: 11.0, seedR: 0.3, persistR: 0.0, scaleG: 2.0, seedG: 0.0, persistG: 0.5, offsetG: 10.0 },
+  shape: {
+    covBottomShape: 0.2, covBottomCurve: 0.1, covTopShape: 0.95,
+    cloudBottom: 0.12, cloudTop: 0.9,
+    fadeCovBottom: 0.03, fadeCovStart: 0.06, fadeCovEnd: 1.0,
+  },
+};
+
+// Bakes the base cloud shape (Perlin FBM mixed with billowy Worley) into a
+// tileable 3D texture, one Z slice at a time.
+const VOL_BASE_BAKE_VERT = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const VOL_BASE_BAKE_FRAG = `
+precision highp float;
+varying vec2 vUv;
+
+uniform float uSliceZ;
+uniform float uRepeat1;
+uniform float uScale1;
+uniform float uSeed1;
+uniform float uRepeat2;
+uniform float uScale2;
+uniform float uSeed2;
+uniform float uMixStrength;
+uniform float uContrast;
+uniform float uErosion;
+
+vec3 hash33(vec3 p) {
+  p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+           dot(p, vec3(269.5, 183.3, 246.1)),
+           dot(p, vec3(113.5, 271.9, 124.6)));
+  return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+vec3 hash33_worley(vec3 p) {
+  p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+           dot(p, vec3(269.5, 183.3, 246.1)),
+           dot(p, vec3(113.5, 271.9, 124.6)));
+  return fract(sin(p) * 43758.5453123);
+}
+
+float periodicNoise(vec3 p, float period) {
+  vec3 pi = floor(p);
+  vec3 pf = fract(p);
+  vec3 w = pf * pf * (3.0 - 2.0 * pf);
+  vec3 p0 = mod(pi, period);
+  vec3 p1 = mod(pi + vec3(1.0), period);
+  float n000 = dot(hash33(vec3(p0.x, p0.y, p0.z)), pf - vec3(0.0, 0.0, 0.0));
+  float n100 = dot(hash33(vec3(p1.x, p0.y, p0.z)), pf - vec3(1.0, 0.0, 0.0));
+  float n010 = dot(hash33(vec3(p0.x, p1.y, p0.z)), pf - vec3(0.0, 1.0, 0.0));
+  float n110 = dot(hash33(vec3(p1.x, p1.y, p0.z)), pf - vec3(1.0, 1.0, 0.0));
+  float n001 = dot(hash33(vec3(p0.x, p0.y, p1.z)), pf - vec3(0.0, 0.0, 1.0));
+  float n101 = dot(hash33(vec3(p1.x, p0.y, p1.z)), pf - vec3(1.0, 0.0, 1.0));
+  float n011 = dot(hash33(vec3(p0.x, p1.y, p1.z)), pf - vec3(0.0, 1.0, 1.0));
+  float n111 = dot(hash33(vec3(p1.x, p1.y, p1.z)), pf - vec3(1.0, 1.0, 1.0));
+  return mix(mix(mix(n000, n100, w.x), mix(n010, n110, w.x), w.y),
+             mix(mix(n001, n101, w.x), mix(n011, n111, w.x), w.y), w.z);
+}
+
+float fbmPerlin(vec3 p, float repeat, float scale) {
+  float f = 0.0;
+  float amp = 0.5;
+  float currentPeriod = repeat * scale;
+  vec3 currentPos = p * scale;
+  for (int i = 0; i < 4; i++) {
+    f += amp * periodicNoise(currentPos, currentPeriod);
+    currentPos *= 2.0;
+    currentPeriod *= 2.0;
+    amp *= 0.5;
+  }
+  return f + 0.5;
+}
+
+float worleyNoise(vec3 p, float period) {
+  vec3 id = floor(p);
+  vec3 f = fract(p);
+  float minDist = 1.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      for (int z = -1; z <= 1; z++) {
+        vec3 neighbor = vec3(float(x), float(y), float(z));
+        vec3 tileId = mod(id + neighbor, period);
+        vec3 point = hash33_worley(tileId + vec3(uSeed2 * 10.0));
+        vec3 diff = neighbor + point - f;
+        minDist = min(minDist, length(diff));
+      }
+    }
+  }
+  return 1.0 - clamp(minDist, 0.0, 1.0);
+}
+
+float fbmWorley(vec3 p, float repeat, float scale) {
+  float f = 0.0;
+  float amp = 0.5;
+  float currentPeriod = repeat * scale;
+  vec3 currentPos = p * scale;
+  for (int i = 0; i < 3; i++) {
+    f += amp * worleyNoise(currentPos, currentPeriod);
+    currentPos *= 2.0;
+    currentPeriod *= 2.0;
+    amp *= 0.5;
+  }
+  return f * 0.8;
+}
+
+void main() {
+  vec2 uv = vUv;
+  vec3 pos1 = vec3(uv.x, uSliceZ, uv.y) * uRepeat1;
+  float baseCloud = fbmPerlin(pos1 + vec3(uSeed1 * 10.0), uRepeat1, uScale1);
+  vec3 pos2 = vec3(uv.x, uSliceZ, uv.y) * uRepeat2;
+  float structure = fbmWorley(pos2, uRepeat2, uScale2);
+  float finalNoise = mix(baseCloud, structure, uMixStrength);
+  float f = mix(finalNoise, finalNoise * finalNoise, uErosion);
+  float cloudDensity = (uContrast * (f - 0.5)) + 0.5;
+  float visible = clamp(cloudDensity, 0.0, 1.0);
+  gl_FragColor = vec4(visible, visible, visible, 1.0);
+}
+`;
+
+// Bakes three frequencies of tileable Worley noise (RGB) used to erode cloud
+// edges into billowy "popcorn" detail.
+const VOL_DETAIL_BAKE_FRAG = `
+precision highp float;
+varying vec2 vUv;
+
+uniform float uSliceZ;
+uniform float uScaleR;
+uniform float uScaleG;
+uniform float uScaleB;
+uniform float uSeed;
+
+vec3 hash33(vec3 p) {
+  p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+           dot(p, vec3(269.5, 183.3, 246.1)),
+           dot(p, vec3(113.5, 271.9, 124.6)));
+  return fract(sin(p) * 43758.5453123);
+}
+
+float worleyNoise(vec3 uvw, float freq) {
+  vec3 id = floor(uvw);
+  vec3 f = fract(uvw);
+  float minDist = 1.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      for (int z = -1; z <= 1; z++) {
+        vec3 neighbor = vec3(float(x), float(y), float(z));
+        vec3 tileId = mod(id + neighbor, freq);
+        vec3 point = hash33(tileId + vec3(uSeed));
+        vec3 diff = neighbor + point - f;
+        minDist = min(minDist, length(diff));
+      }
+    }
+  }
+  return 1.0 - clamp(minDist, 0.0, 1.0);
+}
+
+void main() {
+  vec3 pos = vec3(vUv.x, uSliceZ, vUv.y);
+  float r = worleyNoise(pos * uScaleR, uScaleR);
+  float g = worleyNoise(pos * uScaleG, uScaleG);
+  float b = worleyNoise(pos * uScaleB, uScaleB);
+  gl_FragColor = vec4(r, g, b, 1.0);
+}
+`;
+
+// Bakes a tileable 2D weather map (R: coverage, G: type) sampled planarly on XZ.
+const VOL_WEATHER_BAKE_FRAG = `
+precision highp float;
+varying vec2 vUv;
+
+uniform float uScaleR;
+uniform float uSeedR;
+uniform float uPersistR;
+uniform vec2 uOffsetR;
+uniform float uScaleG;
+uniform float uSeedG;
+uniform float uPersistG;
+uniform vec2 uOffsetG;
+
+vec3 hash33(vec3 p) {
+  p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+           dot(p, vec3(269.5, 183.3, 246.1)),
+           dot(p, vec3(113.5, 271.9, 124.6)));
+  return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float periodicNoise(vec3 p, float period) {
+  vec3 pi = floor(p);
+  vec3 pf = fract(p);
+  vec3 w = pf * pf * (3.0 - 2.0 * pf);
+  vec3 p0 = mod(pi, period);
+  vec3 p1 = mod(pi + vec3(1.0), period);
+  float n000 = dot(hash33(vec3(p0.x, p0.y, p0.z)), pf - vec3(0.0, 0.0, 0.0));
+  float n100 = dot(hash33(vec3(p1.x, p0.y, p0.z)), pf - vec3(1.0, 0.0, 0.0));
+  float n010 = dot(hash33(vec3(p0.x, p1.y, p0.z)), pf - vec3(0.0, 1.0, 0.0));
+  float n110 = dot(hash33(vec3(p1.x, p1.y, p0.z)), pf - vec3(1.0, 1.0, 0.0));
+  float n001 = dot(hash33(vec3(p0.x, p0.y, p1.z)), pf - vec3(0.0, 0.0, 1.0));
+  float n101 = dot(hash33(vec3(p1.x, p0.y, p1.z)), pf - vec3(1.0, 0.0, 1.0));
+  float n011 = dot(hash33(vec3(p0.x, p1.y, p1.z)), pf - vec3(0.0, 1.0, 1.0));
+  float n111 = dot(hash33(vec3(p1.x, p1.y, p1.z)), pf - vec3(1.0, 1.0, 1.0));
+  return mix(mix(mix(n000, n100, w.x), mix(n010, n110, w.x), w.y),
+             mix(mix(n001, n101, w.x), mix(n011, n111, w.x), w.y), w.z);
+}
+
+float fbm(vec2 uv, float scale, float seed, float persistence, vec2 offset) {
+  float f = 0.0;
+  float amp = 0.5;
+  float currentScale = scale;
+  vec3 pos = vec3(uv, seed);
+  for (int i = 0; i < 4; i++) {
+    vec3 samplePos = (pos + vec3(offset, 0.0)) * currentScale;
+    f += amp * periodicNoise(samplePos, currentScale);
+    currentScale *= 2.0;
+    amp *= persistence;
+  }
+  return f + 0.5;
+}
+
+void main() {
+  vec2 uv = vUv;
+  float cov = fbm(uv, uScaleR, uSeedR, uPersistR, uOffsetR);
+  cov = smoothstep(0.2, 0.8, cov);
+  float type = fbm(uv, uScaleG, uSeedG, uPersistG, uOffsetG);
+  gl_FragColor = vec4(cov, type, 0.0, 1.0);
+}
+`;
+
+// Fullscreen raymarch of the flat cloud slab [baseY, baseY + height].
+// Outputs premultiplied linear-HDR color + alpha at reduced resolution.
+const VOL_MARCH_VERT = `
+out vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+const VOL_MARCH_FRAG = `
+precision highp float;
+precision highp sampler3D;
+
+uniform mat4 uInverseViewMatrix;
+uniform mat4 uInverseProjectionMatrix;
+uniform vec3 uCameraPos;
+uniform sampler2D tDepth;
+uniform float uLogDepthBufFC;
+
+uniform sampler3D uTexture;
+uniform sampler3D uDetailTexture;
+uniform sampler2D tWeatherMap;
+uniform vec3 uWindOffset;
+
+uniform vec3 uSunDirection;
+uniform float uSunIntensity;
+uniform float uAmbientScale;
+
+uniform float uCloudBaseY;
+uniform float uCloudHeight;
+uniform float uCloudScale;
+uniform float uWeatherScale;
+uniform vec2 uWeatherOffset;
+uniform float uDetailScale;
+uniform float uErosionStrength;
+uniform float uLodDistance;
+uniform float uBaseLodMaxDist;
+uniform float uBaseLodMaxLevel;
+
+uniform float uCoverage;
+uniform float uCovBottomShape;
+uniform float uCovBottomCurve;
+uniform float uCovTopShape;
+uniform float uCloudBottom;
+uniform float uCloudTop;
+uniform float uFadeCovBottom;
+uniform float uFadeCovStart;
+uniform float uFadeCovEnd;
+
+uniform float uDensityScale;
+uniform float uAbsorp;
+uniform float uThreshold;
+uniform float uEdgeSoftness;
+uniform float uShadowOffset;
+uniform float uSkylightAbsorption;
+uniform float uPowderScale;
+uniform float uPowderIntensity;
+uniform float uPhaseIntensity;
+uniform float uPhaseG;
+uniform float uOpacityClamp;
+
+uniform float uSteps;
+uniform float uMaxIterations;
+uniform float uInitialStep;
+uniform float uStepGrowth;
+uniform float uMaxStep;
+uniform float uSpaceSkipRatio;
+uniform float uMaxDistance;
+
+in vec2 vUv;
+layout(location = 0) out vec4 outColor;
+
+float remap(float v, float minOld, float maxOld, float minNew, float maxNew) {
+  return minNew + (v - minOld) * (maxNew - minNew) / (maxOld - minOld);
+}
+
+float hg(float g, float cosTheta) {
+  float g2 = g * g;
+  return (1.0 - g2) / (4.0 * 3.14159 * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5));
+}
+
+float phaseFunction(float cosTheta) {
+  return mix(hg(uPhaseG, cosTheta), hg(-0.2, cosTheta), 0.5);
+}
+
+// Interleaved gradient noise: procedural dither, replaces the demo's blue
+// noise texture so no asset file is needed.
+float ign(vec2 p) {
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+
+// Elevation-based sun tint. Replaces the demo's planetary transmittance,
+// which needed a planet sphere; the sun here is driven by skySunDir.
+vec3 sunLightColor() {
+  float elev = uSunDirection.y;
+  float day = smoothstep(-0.05, 0.1, elev);
+  vec3 tint = mix(vec3(1.0, 0.4, 0.15), vec3(1.0, 0.96, 0.9), smoothstep(0.0, 0.35, elev));
+  return tint * uSunIntensity * day;
+}
+
+float sampleCloud(vec3 p) {
+  float altitude = p.y - uCloudBaseY;
+  if (altitude < 0.0 || altitude > uCloudHeight) return 0.0;
+
+  vec2 weatherUV = p.xz * uWeatherScale + uWeatherOffset;
+  float weatherR = textureLod(tWeatherMap, weatherUV, 0.0).r;
+  float mapCoverage = smoothstep(0.2, 0.8, weatherR);
+  if (mapCoverage <= 0.01) return 0.0;
+
+  float heightPercent = altitude / uCloudHeight;
+
+  vec3 noiseCoord = p * uCloudScale + uWindOffset;
+  float distToCam = distance(p, uCameraPos);
+  // Explicit LOD: implicit derivatives are undefined inside the divergent
+  // raymarch loop, and lower mips are cheaper for far samples anyway.
+  float baseLod = clamp(distToCam / uBaseLodMaxDist, 0.0, 1.0) * uBaseLodMaxLevel;
+  float baseDensity = textureLod(uTexture, noiseCoord, baseLod).r;
+
+  float shapeBottom = pow(smoothstep(0.0, uCovBottomShape, heightPercent), uCovBottomCurve);
+  float shapeTop = 1.0 - smoothstep(uCovTopShape, 1.0, heightPercent);
+  float fadeIn = smoothstep(0.0, uFadeCovBottom, heightPercent);
+  float fadeOut = 1.0 - smoothstep(uFadeCovStart, uFadeCovEnd, heightPercent);
+  float dynamicCoverage = mapCoverage * uCoverage * fadeIn * fadeOut * shapeBottom * shapeTop;
+
+  float density = remap(baseDensity, 1.0 - dynamicCoverage, 1.0, 0.0, 1.0);
+  if (density <= 0.0) return 0.0;
+
+  float lodFactor = clamp(distToCam / uLodDistance, 0.0, 1.0);
+  if (lodFactor < 1.0) {
+    vec3 detailNoise = textureLod(uDetailTexture, noiseCoord * uDetailScale, 0.0).rgb;
+    float highFreq = detailNoise.r * 0.625 + detailNoise.g * 0.25 + detailNoise.b * 0.125;
+    density = remap(density, (1.0 - highFreq) * uErosionStrength * (1.0 - lodFactor), 1.0, 0.0, 1.0);
+  }
+
+  float bottomFade = smoothstep(0.0, uCloudBottom, heightPercent);
+  float topFade = 1.0 - smoothstep(uCloudTop, 1.0, heightPercent);
+  return max(density, 0.0) * bottomFade * topFade;
+}
+
+void main() {
+  vec4 ndc = vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+  vec4 clipPos = uInverseProjectionMatrix * ndc;
+  vec4 worldPos = uInverseViewMatrix * (clipPos / clipPos.w);
+  vec3 ro = uCameraPos;
+  vec3 rd = normalize(worldPos.xyz - ro);
+
+  // Reconstruct distance to solid geometry from the logarithmic depth buffer.
+  float depthLog = texture(tDepth, vUv).r;
+  float geoDist = 1e20;
+  if (depthLog < 1.0) {
+    float viewZ = abs(exp2(depthLog / (uLogDepthBufFC * 0.5)) - 1.0);
+    vec3 camFwd = normalize((uInverseViewMatrix * vec4(0.0, 0.0, -1.0, 0.0)).xyz);
+    geoDist = viewZ / max(dot(rd, camFwd), 1e-4);
+  }
+
+  // Ray vs. flat altitude slab.
+  float slabTop = uCloudBaseY + uCloudHeight;
+  float tNear;
+  float tFar;
+  if (abs(rd.y) < 1e-5) {
+    if (ro.y < uCloudBaseY || ro.y > slabTop) { outColor = vec4(0.0); return; }
+    tNear = 0.0;
+    tFar = uMaxDistance;
+  } else {
+    float t0 = (uCloudBaseY - ro.y) / rd.y;
+    float t1 = (slabTop - ro.y) / rd.y;
+    tNear = max(0.0, min(t0, t1));
+    tFar = max(t0, t1);
+  }
+  if (tFar <= tNear || geoDist < tNear || tNear > uMaxDistance) {
+    outColor = vec4(0.0);
+    return;
+  }
+  tFar = min(min(tFar, geoDist), tNear + uMaxDistance);
+
+  float dither = ign(gl_FragCoord.xy);
+  float t = tNear;
+  float currentStep = uInitialStep;
+  vec4 cloudColor = vec4(0.0);
+  float phaseVal = phaseFunction(dot(rd, uSunDirection));
+  vec3 sunLight = sunLightColor();
+  float dayNight = smoothstep(-0.1, 0.1, uSunDirection.y);
+  float hitSteps = 0.0;
+  float weightedDepth = 0.0;
+  float totalAlpha = 0.0;
+
+  for (int i = 0; i < 1024; i++) {
+    if (float(i) >= uMaxIterations || t >= tFar) break;
+    if (cloudColor.a >= uOpacityClamp) { cloudColor.a = 1.0; break; }
+
+    float sampleT = t + currentStep * dither;
+    if (sampleT >= tFar) break;
+
+    vec3 pos = ro + rd * sampleT;
+    float rawDens = sampleCloud(pos);
+    float finalDens = smoothstep(uThreshold, uThreshold + uEdgeSoftness, rawDens);
+
+    if (finalDens > 0.001) {
+      // Single shadow sample toward the sun: Beer's law + powder term.
+      float shadowOffset = max(currentStep, uShadowOffset);
+      float shadowDens = sampleCloud(pos + uSunDirection * shadowOffset);
+      float beerLaw = exp(-shadowDens * uAbsorp);
+      float powderTerm = 1.0 - exp(-shadowDens * uPowderScale * 2.0);
+      float illumination = beerLaw * mix(1.0, powderTerm * 2.0 + 1.0, uPowderIntensity);
+      vec3 directLight = sunLight * illumination * phaseVal * uPhaseIntensity;
+
+      float altFactor = clamp((pos.y - uCloudBaseY) / uCloudHeight, 0.0, 1.0);
+      vec3 ambientBase = mix(vec3(0.0, 0.05, 0.15), vec3(0.1, 0.2, 0.4), altFactor);
+      vec3 ambientColor = mix(vec3(0.002, 0.002, 0.005), ambientBase, dayNight);
+      float skyOcclusion = exp(-shadowDens * uSkylightAbsorption * 0.5);
+      vec3 ambientLight = ambientColor * skyOcclusion * (1.0 + finalDens * 0.5) * uAmbientScale;
+
+      vec3 totalLight = directLight + ambientLight;
+
+      float d = finalDens * uDensityScale * currentStep * 0.001;
+      float stepAlpha = 1.0 - exp(-d);
+      float contribution = stepAlpha * (1.0 - cloudColor.a);
+      weightedDepth += sampleT * contribution;
+      totalAlpha += contribution;
+      cloudColor.rgb += totalLight * contribution;
+      cloudColor.a += contribution;
+
+      t += currentStep;
+      hitSteps += 1.0;
+      if (hitSteps >= uSteps) break;
+    } else {
+      t += currentStep * uSpaceSkipRatio;
+    }
+    currentStep = min(currentStep * uStepGrowth, uMaxStep);
+  }
+
+  // Fade the deck out toward the march distance limit so it doesn't end in a
+  // hard line at the horizon.
+  float meanDepth = (totalAlpha > 0.001) ? (weightedDepth / totalAlpha) : tFar;
+  float distFade = 1.0 - smoothstep(uMaxDistance * 0.55, uMaxDistance, meanDepth);
+  outColor = cloudColor * distFade;
+}
+`;
+
+// Composites the offscreen scene + cloud buffer to the canvas. Rendering the
+// scene into a target skips three.js tone mapping/sRGB, so both are applied
+// here. Sky-dome pixels (depth == 1.0) are passed through untouched because
+// the Sky material is toneMapped=false and must keep its current look.
+const VOL_COMPOSITE_VERT = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+const VOL_COMPOSITE_FRAG = `
+uniform sampler2D tScene;
+uniform sampler2D tClouds;
+uniform sampler2D tDepth;
+varying vec2 vUv;
+
+vec3 volToneMap(vec3 color) {
+  #if defined( TONE_MAPPING )
+    return toneMapping(color);
+  #else
+    return color;
+  #endif
+}
+
+void main() {
+  vec4 sceneColor = texture2D(tScene, vUv);
+  vec4 clouds = texture2D(tClouds, vUv);
+  float sceneDepth = texture2D(tDepth, vUv).r;
+  vec3 color;
+  if (sceneDepth >= 1.0) {
+    color = sceneColor.rgb * (1.0 - clouds.a) + volToneMap(clouds.rgb);
+  } else {
+    color = volToneMap(sceneColor.rgb * (1.0 - clouds.a) + clouds.rgb);
+  }
+  gl_FragColor = vec4(color, 1.0);
+  #include <colorspace_fragment>
+}
+`;
+
+let volCloudsReady = false;
+let volSceneRT = null;
+let volCloudRT = null;
+let volWeatherRT = null;
+let volCloudMat = null;
+let volCompositeMat = null;
+let volCloudScene = null;
+let volCompositeScene = null;
+let volQuadCamera = null;
+const volWind = new THREE.Vector3();
+const _volSize = new THREE.Vector2();
+
+// Renders a bake shader slice by slice into a tileable Data3DTexture.
+function volBake3DTexture(material, resolution, channels) {
+  const bakeScene = new THREE.Scene();
+  const bakeCamera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+  bakeScene.add(quad);
+  const rt = new THREE.WebGLRenderTarget(resolution, resolution);
+  const pixels = new Uint8Array(resolution * resolution * 4);
+  const data = new Uint8Array(resolution * resolution * resolution * channels);
+  for (let z = 0; z < resolution; z++) {
+    material.uniforms.uSliceZ.value = z / resolution;
+    renderer.setRenderTarget(rt);
+    renderer.render(bakeScene, bakeCamera);
+    renderer.readRenderTargetPixels(rt, 0, 0, resolution, resolution, pixels);
+    const zOffset = z * resolution * resolution * channels;
+    for (let i = 0; i < resolution * resolution; i++) {
+      if (channels === 1) {
+        data[zOffset + i] = pixels[i * 4];
+      } else {
+        data[zOffset + i * 4] = pixels[i * 4];
+        data[zOffset + i * 4 + 1] = pixels[i * 4 + 1];
+        data[zOffset + i * 4 + 2] = pixels[i * 4 + 2];
+        data[zOffset + i * 4 + 3] = 255;
+      }
+    }
+  }
+  renderer.setRenderTarget(null);
+  rt.dispose();
+  quad.geometry.dispose();
+  const texture = new THREE.Data3DTexture(data, resolution, resolution, resolution);
+  texture.format = channels === 1 ? THREE.RedFormat : THREE.RGBAFormat;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.unpackAlignment = 1;
+  texture.wrapS = texture.wrapT = texture.wrapR = THREE.RepeatWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function volBakeWeatherMap() {
+  const res = VOL_CLOUDS.weatherResolution;
+  const rt = new THREE.WebGLRenderTarget(res, res, {
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat, type: THREE.HalfFloatType,
+    wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping,
+    depthBuffer: false,
+  });
+  const w = VOL_CLOUDS.weather;
+  const material = new THREE.ShaderMaterial({
+    vertexShader: VOL_BASE_BAKE_VERT,
+    fragmentShader: VOL_WEATHER_BAKE_FRAG,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uScaleR: { value: w.scaleR }, uSeedR: { value: w.seedR },
+      uPersistR: { value: w.persistR }, uOffsetR: { value: new THREE.Vector2(0, 0) },
+      uScaleG: { value: w.scaleG }, uSeedG: { value: w.seedG },
+      uPersistG: { value: w.persistG }, uOffsetG: { value: new THREE.Vector2(w.offsetG, 0) },
+    },
+  });
+  const bakeScene = new THREE.Scene();
+  const bakeCamera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+  bakeScene.add(quad);
+  renderer.setRenderTarget(rt);
+  renderer.render(bakeScene, bakeCamera);
+  renderer.setRenderTarget(null);
+  quad.geometry.dispose();
+  material.dispose();
+  return rt;
+}
+
+function volCreateRenderTargets() {
+  renderer.getDrawingBufferSize(_volSize);
+  volSceneRT = new THREE.WebGLRenderTarget(_volSize.x, _volSize.y, {
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat, type: THREE.HalfFloatType,
+    samples: 4,
+  });
+  volSceneRT.depthTexture = new THREE.DepthTexture(_volSize.x, _volSize.y);
+  volSceneRT.depthTexture.type = THREE.UnsignedIntType;
+  volCloudRT = new THREE.WebGLRenderTarget(
+    Math.max(1, Math.floor(_volSize.x * VOL_CLOUDS.renderScale)),
+    Math.max(1, Math.floor(_volSize.y * VOL_CLOUDS.renderScale)),
+    {
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat, type: THREE.HalfFloatType,
+      depthBuffer: false,
+    }
+  );
+}
+
+function resizeVolCloudTargets() {
+  if (!volCloudsReady) return;
+  volSceneRT.depthTexture.dispose();
+  volSceneRT.dispose();
+  volCloudRT.dispose();
+  volCreateRenderTargets();
+}
+
+function initVolumetricClouds() {
+  const gen = VOL_CLOUDS.gen;
+  const baseMat = new THREE.ShaderMaterial({
+    vertexShader: VOL_BASE_BAKE_VERT,
+    fragmentShader: VOL_BASE_BAKE_FRAG,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uSliceZ: { value: 0 },
+      uRepeat1: { value: gen.layer1.repeat }, uScale1: { value: gen.layer1.scale }, uSeed1: { value: gen.layer1.seed },
+      uRepeat2: { value: gen.layer2.repeat }, uScale2: { value: gen.layer2.scale }, uSeed2: { value: gen.layer2.seed },
+      uMixStrength: { value: gen.mixStrength },
+      uErosion: { value: gen.erosion },
+      uContrast: { value: gen.contrast },
+    },
+  });
+  const baseTexture = volBake3DTexture(baseMat, VOL_CLOUDS.baseResolution, 1);
+  baseMat.dispose();
+
+  const detailMat = new THREE.ShaderMaterial({
+    vertexShader: VOL_BASE_BAKE_VERT,
+    fragmentShader: VOL_DETAIL_BAKE_FRAG,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uSliceZ: { value: 0 },
+      uScaleR: { value: gen.detail.scaleR },
+      uScaleG: { value: gen.detail.scaleG },
+      uScaleB: { value: gen.detail.scaleB },
+      uSeed: { value: gen.detail.seed },
+    },
+  });
+  const detailTexture = volBake3DTexture(detailMat, VOL_CLOUDS.detailResolution, 4);
+  detailMat.dispose();
+
+  volWeatherRT = volBakeWeatherMap();
+  volCreateRenderTargets();
+
+  volCloudMat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: VOL_MARCH_VERT,
+    fragmentShader: VOL_MARCH_FRAG,
+    depthTest: false,
+    depthWrite: false,
+    uniforms: {
+      tDepth: { value: null },
+      uTexture: { value: baseTexture },
+      uDetailTexture: { value: detailTexture },
+      tWeatherMap: { value: volWeatherRT.texture },
+      uWindOffset: { value: volWind },
+      uInverseViewMatrix: { value: new THREE.Matrix4() },
+      uInverseProjectionMatrix: { value: new THREE.Matrix4() },
+      uCameraPos: { value: new THREE.Vector3() },
+      uLogDepthBufFC: { value: 1.0 },
+      uSunDirection: { value: new THREE.Vector3(0, 1, 0) },
+      uSunIntensity: { value: VOL_CLOUDS.sunIntensity },
+      uAmbientScale: { value: VOL_CLOUDS.ambientScale },
+      uCloudBaseY: { value: VOL_CLOUDS.baseY },
+      uCloudHeight: { value: VOL_CLOUDS.height },
+      uCloudScale: { value: VOL_CLOUDS.cloudScale },
+      uWeatherScale: { value: VOL_CLOUDS.weatherScale },
+      uWeatherOffset: { value: new THREE.Vector2(0, 0) },
+      uDetailScale: { value: VOL_CLOUDS.detailScale },
+      uErosionStrength: { value: VOL_CLOUDS.erosionStrength },
+      uLodDistance: { value: VOL_CLOUDS.lodDistance },
+      uBaseLodMaxDist: { value: VOL_CLOUDS.baseLodMaxDist },
+      uBaseLodMaxLevel: { value: VOL_CLOUDS.baseLodMaxLevel },
+      uCoverage: { value: VOL_CLOUDS.coverage },
+      uCovBottomShape: { value: VOL_CLOUDS.shape.covBottomShape },
+      uCovBottomCurve: { value: VOL_CLOUDS.shape.covBottomCurve },
+      uCovTopShape: { value: VOL_CLOUDS.shape.covTopShape },
+      uCloudBottom: { value: VOL_CLOUDS.shape.cloudBottom },
+      uCloudTop: { value: VOL_CLOUDS.shape.cloudTop },
+      uFadeCovBottom: { value: VOL_CLOUDS.shape.fadeCovBottom },
+      uFadeCovStart: { value: VOL_CLOUDS.shape.fadeCovStart },
+      uFadeCovEnd: { value: VOL_CLOUDS.shape.fadeCovEnd },
+      uDensityScale: { value: VOL_CLOUDS.densityScale },
+      uAbsorp: { value: VOL_CLOUDS.absorp },
+      uThreshold: { value: VOL_CLOUDS.threshold },
+      uEdgeSoftness: { value: VOL_CLOUDS.edgeSoftness },
+      uShadowOffset: { value: VOL_CLOUDS.shadowOffset },
+      uSkylightAbsorption: { value: VOL_CLOUDS.skylightAbsorption },
+      uPowderScale: { value: VOL_CLOUDS.powderScale },
+      uPowderIntensity: { value: VOL_CLOUDS.powderIntensity },
+      uPhaseIntensity: { value: VOL_CLOUDS.phaseIntensity },
+      uPhaseG: { value: VOL_CLOUDS.phaseG },
+      uOpacityClamp: { value: VOL_CLOUDS.opacityClamp },
+      uSteps: { value: VOL_CLOUDS.steps },
+      uMaxIterations: { value: VOL_CLOUDS.maxIterations },
+      uInitialStep: { value: VOL_CLOUDS.initialStep },
+      uStepGrowth: { value: VOL_CLOUDS.stepGrowth },
+      uMaxStep: { value: VOL_CLOUDS.maxStep },
+      uSpaceSkipRatio: { value: VOL_CLOUDS.spaceSkipRatio },
+      uMaxDistance: { value: VOL_CLOUDS.maxDistance },
+    },
+  });
+  volCloudScene = new THREE.Scene();
+  const cloudQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), volCloudMat);
+  cloudQuad.frustumCulled = false;
+  volCloudScene.add(cloudQuad);
+
+  volCompositeMat = new THREE.ShaderMaterial({
+    vertexShader: VOL_COMPOSITE_VERT,
+    fragmentShader: VOL_COMPOSITE_FRAG,
+    depthTest: false,
+    depthWrite: false,
+    uniforms: {
+      tScene: { value: null },
+      tClouds: { value: null },
+      tDepth: { value: null },
+    },
+  });
+  volCompositeScene = new THREE.Scene();
+  const compositeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), volCompositeMat);
+  compositeQuad.frustumCulled = false;
+  volCompositeScene.add(compositeQuad);
+
+  volQuadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  volCloudsReady = true;
+}
+
+try {
+  initVolumetricClouds();
+} catch (err) {
+  console.error('Volumetric cloud layer disabled:', err);
+  volCloudsReady = false;
+}
+
+// Scene -> offscreen target, raymarch clouds at reduced resolution, then
+// composite both to the canvas. Falls back to the plain render path if the
+// cloud system failed to initialize.
+function renderVolumetricClouds(delta) {
+  if (!volCloudsReady || !volCloudsEnabled) {
+    renderer.render(scene, camera);
+    return;
+  }
+  volWind.x += VOL_CLOUDS.wind.x * delta;
+  volWind.y += VOL_CLOUDS.wind.y * delta;
+  volWind.z += VOL_CLOUDS.wind.z * delta;
+
+  camera.updateMatrixWorld();
+  const u = volCloudMat.uniforms;
+  u.uInverseViewMatrix.value.copy(camera.matrixWorld);
+  u.uInverseProjectionMatrix.value.copy(camera.projectionMatrixInverse);
+  u.uCameraPos.value.copy(camera.position);
+  u.uSunDirection.value.copy(skySunDir);
+  u.uLogDepthBufFC.value = 2.0 / (Math.log(camera.far + 1.0) / Math.LN2);
+  u.tDepth.value = volSceneRT.depthTexture;
+
+  renderer.setRenderTarget(volSceneRT);
+  renderer.render(scene, camera);
+
+  renderer.setRenderTarget(volCloudRT);
+  renderer.render(volCloudScene, volQuadCamera);
+
+  volCompositeMat.uniforms.tScene.value = volSceneRT.texture;
+  volCompositeMat.uniforms.tClouds.value = volCloudRT.texture;
+  volCompositeMat.uniforms.tDepth.value = volSceneRT.depthTexture;
+  renderer.setRenderTarget(null);
+  renderer.render(volCompositeScene, volQuadCamera);
+}
 
 const clock = new THREE.Clock();
 let skyAnimTime = 0;
@@ -292,11 +1415,11 @@ const _rayOrigin = new THREE.Vector3();
 const _rayDir = new THREE.Vector3(0, -1, 0);
 
 function sampleTerrainHeight(x, z) {
-  // Prefer BVH raycast so feet match the rendered triangles (critical on inclines).
   if (terrainMesh) {
-    _rayOrigin.set(x, HEIGHT_SCALE * 3, z);
+    const rayTop = HEIGHT_SCALE * Math.max(terrainReliefScale, 1) * 3 + Math.max(0, terrainHeightShift) + 1000;
+    _rayOrigin.set(x, rayTop, z);
     _ray.set(_rayOrigin, _rayDir);
-    _ray.far = HEIGHT_SCALE * 5;
+    _ray.far = rayTop + HEIGHT_SCALE * Math.max(terrainReliefScale, 1) * 2 + Math.abs(terrainHeightShift);
     const hits = _ray.intersectObject(terrainMesh, false);
     if (hits.length > 0) return hits[0].point.y;
   }
@@ -464,10 +1587,11 @@ function bakeTreeTemplate(template, category) {
   const minY = Number.isFinite(worldBox.min.y) ? worldBox.min.y : 0;
   const midX = (worldBox.min.x + worldBox.max.x) * 0.5;
   const midZ = (worldBox.min.z + worldBox.max.z) * 0.5;
+  const kind = category || foliageCategory(template.name);
   const height = Math.max(worldBox.max.y - worldBox.min.y, 1e-6);
   const norm = 1 / height;
-  // Slight sink so MASK cutout / pivot slack doesn't leave plants hovering.
-  const sink = height * 0.02;
+  // Grass/bushes need a deeper sink — MASK cutouts and uneven bases float easily.
+  const sink = height * (kind === 'grass' || kind === 'plant' || kind === 'flower' ? 0.12 : 0.03);
 
   // Center XZ + ground Y first, THEN normalize. Scaling around the world
   // origin while plants are still at pack layout positions was the old float bug.
@@ -479,7 +1603,6 @@ function bakeTreeTemplate(template, category) {
     part.geometry.computeBoundingSphere();
   }
 
-  const kind = category || foliageCategory(template.name);
   return {
     name: template.name,
     category: kind,
@@ -514,42 +1637,60 @@ function extractFoliageTemplates(gltf) {
   return templates;
 }
 
-function isForestZone4TreeTemplate(template) {
-  return FOREST_ZONE4_TREE_NAME_RE.test(template?.name || '');
+function foliageNameMatches(templateName, want) {
+  const n = (templateName || '').toLowerCase();
+  const w = (want || '').toLowerCase();
+  return n === w || n.startsWith(w + '-') || n.startsWith(w + '_');
 }
 
-function buildFoliageTypeWeights(templates) {
-  const byCat = { tree: [], grass: [], flower: [], plant: [] };
-  templates.forEach((t, i) => {
-    if (t.category === 'tree' && !isForestZone4TreeTemplate(t)) return;
-    byCat[t.category]?.push(i);
-  });
-  const entries = [];
-  let total = 0;
-  for (const [cat, idxs] of Object.entries(byCat)) {
-    if (!idxs.length) continue;
-    const share = FOLIAGE_SPAWN_WEIGHT[cat] ?? 0;
-    if (share <= 0) continue;
-    const each = share / idxs.length;
-    for (const i of idxs) {
-      entries.push({ index: i, weight: each });
-      total += each;
+function buildFoliageZonePools(templates) {
+  const pools = {};
+  for (const rule of FOLIAGE_ZONE_RULES) {
+    const entries = [];
+    for (const spec of rule.entries || []) {
+      const matches = [];
+      templates.forEach((t, i) => {
+        if (foliageNameMatches(t?.name, spec.name)) matches.push(i);
+      });
+      if (!matches.length) {
+        console.warn(`Zone ${rule.step}: no template for ${spec.name}`);
+        continue;
+      }
+      const share = (spec.weight || 1) / matches.length;
+      for (const index of matches) {
+        const tmpl = templates[index];
+        const cat = tmpl.category === 'tree' && rule.step === 5 ? 'tree-dry' : tmpl.category;
+        entries.push({
+          index,
+          weight: share,
+          category: cat,
+          scaleMin: tmpl.scaleMin,
+          scaleMax: tmpl.scaleMax,
+          spacing: FOLIAGE_MIN_SPACING[tmpl.category] || FOLIAGE_MIN_SPACING.plant,
+          groundSink: FOLIAGE_GROUND_SINK[tmpl.category] ?? 0.1,
+        });
+      }
     }
+    const total = entries.reduce((s, e) => s + e.weight, 0) || 1;
+    let acc = 0;
+    for (const e of entries) {
+      acc += e.weight / total;
+      e.cdf = acc;
+    }
+    if (!entries.length) console.warn(`No foliage templates matched zone ${rule.step} (${rule.label})`);
+    else console.info(`Zone ${rule.step} pool:`, entries.map((e) => templates[e.index].name));
+    pools[rule.step] = entries;
   }
-  if (!total) throw new Error('No foliage types available for forest spawn pool');
-  let acc = 0;
-  return entries.map((e) => {
-    acc += e.weight / total;
-    return { index: e.index, cdf: acc };
-  });
+  return pools;
 }
 
-function pickFoliageType(weights, rng) {
+function pickWeightedPoolEntry(pool, rng) {
+  if (!pool?.length) return null;
   const r = rng();
-  for (const entry of weights) {
-    if (r <= entry.cdf) return entry.index;
+  for (const entry of pool) {
+    if (r <= entry.cdf) return entry;
   }
-  return weights[weights.length - 1].index;
+  return pool[pool.length - 1];
 }
 
 async function loadForestTreeTemplates() {
@@ -560,7 +1701,7 @@ async function loadForestTreeTemplates() {
       loader.load(FOLIAGE_PACK_URL, (gltf) => {
         try {
           const templates = extractFoliageTemplates(gltf);
-          templates._typeWeights = buildFoliageTypeWeights(templates);
+          templates._zonePools = buildFoliageZonePools(templates);
           resolve(templates);
         } catch (err) {
           reject(err);
@@ -599,9 +1740,21 @@ function sampleForestGuideStep(entry, x, z) {
   return guide.steps[py * guide.width + px];
 }
 
-function isForestTerrain(entry, x, z, surfaceY, waterY) {
+function isTerrainTooSteep(sample) {
+  return !sample || sample.slopeCos < TERRAIN_FOREST_MIN_SLOPE_COS;
+}
+
+function isFoliageBelowWater(surfaceY, waterY) {
+  if (TERRAIN_FOLIAGE_ALLOW_UNDERWATER) return false;
+  return surfaceY <= waterY + TERRAIN_FOREST_WATER_CLEARANCE;
+}
+
+function isForestTerrain(entry, x, z, surfaceY, waterY, sample = null) {
   if (sampleForestGuideStep(entry, x, z) !== FOREST_SPAWN_GUIDE_STEP) return false;
-  return surfaceY > waterY + TERRAIN_FOREST_WATER_CLEARANCE;
+  // Player spawn still stays dry even when foliage may plant underwater.
+  if (surfaceY <= waterY + TERRAIN_FOREST_WATER_CLEARANCE) return false;
+  if (sample ? isTerrainTooSteep(sample) : isTerrainTooSteep(sampleTerrainSurface(entry, x, z))) return false;
+  return true;
 }
 
 async function loadImagePixelData(url) {
@@ -624,14 +1777,57 @@ async function loadImagePixelData(url) {
   };
 }
 
+function lumaToForestGuideStep(luma) {
+  // Nearest of the 6 authored greys → zone label (1..6).
+  let best = FOREST_GUIDE_COLORS[0];
+  let bestDist = Infinity;
+  for (const entry of FOREST_GUIDE_COLORS) {
+    const d = Math.abs(luma - entry.gray);
+    if (d < bestDist) {
+      bestDist = d;
+      best = entry;
+    }
+  }
+  return best.zone;
+}
+
 function buildForestSpawnGuide(pixelData) {
   const { width, height, data } = pixelData;
   const steps = new Uint8Array(width * height);
+  const counts = new Array(FOREST_SPAWN_GUIDE_MAX_STEP + 1).fill(0);
+  const grayHits = new Array(FOREST_GUIDE_COLORS.length).fill(0);
+
   for (let i = 0, p = 0; i < steps.length; i++, p += 4) {
-    const luma = (data[p] + data[p + 1] + data[p + 2]) / 3;
-    steps[i] = Math.round((luma / 255) * FOREST_SPAWN_GUIDE_MAX_STEP);
+    // Guide is grayscale RGB — use R (G/B match on authored pixels).
+    const luma = data[p];
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let c = 0; c < FOREST_GUIDE_COLORS.length; c++) {
+      const d = Math.abs(luma - FOREST_GUIDE_COLORS[c].gray);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = c;
+      }
+    }
+    grayHits[bestIdx]++;
+    const zone = FOREST_GUIDE_COLORS[bestIdx].zone;
+    steps[i] = zone;
+    counts[zone]++;
   }
-  return { width, height, steps };
+
+  const legend = FOREST_GUIDE_COLORS.map((c, i) => ({
+    gray: c.gray,
+    hex: `#${c.gray.toString(16).padStart(2, '0').repeat(3)}`,
+    zone: c.zone,
+    pixels: grayHits[i],
+  }));
+  console.info(
+    'Guide PNG → 6 separate zones (1=black … 6=white):',
+    legend,
+    'byZone',
+    counts,
+  );
+  return { width, height, steps, counts, legend };
 }
 
 function sampleTerrainSurface(entry, x, z) {
@@ -661,10 +1857,14 @@ function sampleTerrainSurface(entry, x, z) {
 
   const sampleY = (i) => pos.getY(i);
   const sampleH = (i) => heightNormAttr.array[i];
+  const y00 = sampleY(i00);
+  const y10 = sampleY(i10);
+  const y01 = sampleY(i01);
+  const y11 = sampleY(i11);
   // Bilinear sample — matches continuous terrain height better for placement.
   const y = THREE.MathUtils.lerp(
-    THREE.MathUtils.lerp(sampleY(i00), sampleY(i10), tx),
-    THREE.MathUtils.lerp(sampleY(i01), sampleY(i11), tx),
+    THREE.MathUtils.lerp(y00, y10, tx),
+    THREE.MathUtils.lerp(y01, y11, tx),
     tz,
   );
   const heightNorm = THREE.MathUtils.lerp(
@@ -672,7 +1872,12 @@ function sampleTerrainSurface(entry, x, z) {
     THREE.MathUtils.lerp(sampleH(i01), sampleH(i11), tx),
     tz,
   );
-  return { y: y + entry.mesh.position.y, heightNorm };
+  // Slope from local height gradient (normal.y = cos(slope angle)).
+  const cell = TERRAIN_SIZE / segments;
+  const dydx = (THREE.MathUtils.lerp(y10 - y00, y11 - y01, tz)) / cell;
+  const dydz = (THREE.MathUtils.lerp(y01 - y00, y11 - y10, tx)) / cell;
+  const slopeCos = 1 / Math.sqrt(1 + dydx * dydx + dydz * dydz);
+  return { y: y + entry.mesh.position.y, heightNorm, slopeCos };
 }
 
 function terrainForestChunkKey(x, z) {
@@ -683,8 +1888,17 @@ function terrainForestChunkKey(x, z) {
 
 function addTreeToChunkBin(chunkBins, tree) {
   const key = terrainForestChunkKey(tree.x, tree.z);
-  if (!chunkBins.has(key)) chunkBins.set(key, []);
-  chunkBins.get(key).push(tree);
+  let bin = chunkBins.get(key);
+  if (!bin) {
+    // Packed: [x,y,z,scale,spin,type] * n — far cheaper than 1 object per plant at 1M+.
+    bin = [];
+    chunkBins.set(key, bin);
+  }
+  bin.push(tree.x, tree.y, tree.z, tree.scale, tree.spin, tree.type);
+}
+
+function chunkBinCount(bin) {
+  return bin ? (bin.length / 6) | 0 : 0;
 }
 
 function buildTerrainForestChunkGroup(trees, renderTemplates) {
@@ -692,26 +1906,27 @@ function buildTerrainForestChunkGroup(trees, renderTemplates) {
   const typeCount = renderTemplates.length;
   const buckets = Array.from({ length: typeCount }, () => []);
 
-  for (const tree of trees) {
-    buckets[tree.type % typeCount].push(tree);
+  for (let i = 0; i < trees.length; i += 6) {
+    const type = trees[i + 5] | 0;
+    buckets[type % typeCount].push(i);
   }
 
   const meshes = [];
   for (let ti = 0; ti < typeCount; ti++) {
-    const instances = buckets[ti];
-    if (!instances.length) continue;
+    const indices = buckets[ti];
+    if (!indices.length) continue;
     const { parts } = renderTemplates[ti];
     for (const part of parts) {
-      const mesh = new THREE.InstancedMesh(part.geometry, part.material, instances.length);
+      const mesh = new THREE.InstancedMesh(part.geometry, part.material, indices.length);
       mesh.frustumCulled = true;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       const arr = mesh.instanceMatrix.array;
-      for (let j = 0; j < instances.length; j++) {
-        const inst = instances[j];
-        _dummy.position.set(inst.x, inst.y, inst.z);
-        _dummy.rotation.set(0, inst.spin, 0);
-        _dummy.scale.setScalar(inst.scale);
+      for (let j = 0; j < indices.length; j++) {
+        const base = indices[j];
+        _dummy.position.set(trees[base], trees[base + 1], trees[base + 2]);
+        _dummy.rotation.set(0, trees[base + 4], 0);
+        _dummy.scale.setScalar(trees[base + 3]);
         _dummy.updateMatrix();
         _dummy.matrix.toArray(arr, j * 16);
       }
@@ -764,7 +1979,7 @@ async function buildAllTerrainForestChunksAsync(system, generation) {
         system.builtChunks.set(key, { key, trees, group });
         system.root.add(group);
         system.instancedMeshes.push(...group.userData.instancedMeshes);
-        builtTrees += trees.length;
+        builtTrees += chunkBinCount(trees);
         index++;
       }
       if (total > 0) {
@@ -789,7 +2004,7 @@ function getForestDensityNoise(seed) {
   return forestDensityNoise;
 }
 
-function forestRegionDensity(x, z, seed) {
+function forestRegionDensity(x, z, seed, bareCutoff = TERRAIN_FOREST_BARE_CUTOFF) {
   const fn = getForestDensityNoise(seed);
   const inv = 1 / Math.max(TERRAIN_SIZE, 1);
   // Two-scale noise keeps clearings vs stands without 3 expensive FBMs per attempt.
@@ -797,17 +2012,16 @@ function forestRegionDensity(x, z, seed) {
   const grove = fn.fbm(x * inv * 7.2 + 40, z * inv * 7.2 + 70, 2, 2.2, 0.5);
   const regionNorm = region * 0.5 + 0.5;
   const groveNorm = grove * 0.5 + 0.5;
-  if (regionNorm < TERRAIN_FOREST_BARE_CUTOFF) return 0;
-  const regionWeight = terrainSmoothstep(TERRAIN_FOREST_BARE_CUTOFF, 0.78, regionNorm);
+  if (regionNorm < bareCutoff) return 0;
+  const regionWeight = terrainSmoothstep(bareCutoff, 0.78, regionNorm);
   const groveWeight = terrainSmoothstep(0.28, 0.84, groveNorm);
   const stand = regionWeight * regionWeight * (0.2 + groveWeight * groveWeight * 0.8);
   return Math.min(1, stand * 1.35);
 }
 
-function forestPlacementChance(density) {
+function forestPlacementChance(density, power = 1.35) {
   if (density <= 0) return 0;
-  // Patchy, but dense stands place reliably so fill doesn't thrash.
-  return Math.min(1, density ** 1.35 * 0.98);
+  return Math.min(1, density ** power * 0.98);
 }
 
 function collectForestGuideZoneIndices(guide, step = FOREST_SPAWN_GUIDE_STEP) {
@@ -839,46 +2053,34 @@ function worldFromForestGuideIndex(entry, index, rng) {
 }
 
 function createFoliageSpacingGrid() {
-  // Separate layers so tree spacing never forces a huge neighbor search over tiny grass cells.
-  return {
-    tree: {
-      cellSize: FOLIAGE_MIN_SPACING.tree,
-      minDistSq: (FOLIAGE_MIN_SPACING.tree * 0.92) ** 2,
-      cells: new Map(),
-    },
-    ground: {
-      cellSize: Math.min(
-        FOLIAGE_MIN_SPACING.grass,
-        FOLIAGE_MIN_SPACING.flower,
-        FOLIAGE_MIN_SPACING.plant,
-      ),
-      minDistSq: (Math.min(
-        FOLIAGE_MIN_SPACING.grass,
-        FOLIAGE_MIN_SPACING.flower,
-        FOLIAGE_MIN_SPACING.plant,
-      ) * 0.92) ** 2,
-      cells: new Map(),
-    },
-  };
+  return { layers: new Map() };
 }
 
-function foliageSpacingLayer(grid, category) {
-  return category === 'tree' ? grid.tree : grid.ground;
+function foliageSpacingLayer(grid, category, spacing) {
+  let layer = grid.layers.get(category);
+  if (!layer) {
+    layer = {
+      cellSize: spacing,
+      cells: new Map(),
+    };
+    grid.layers.set(category, layer);
+  }
+  return layer;
 }
 
 function foliageCellKey(cx, cz) {
-  // Pack cell coords; terrain/cell counts stay well inside this range.
   return (cx + 500000) * 1000003 + (cz + 500000);
 }
 
-function foliageSpacingFits(grid, x, z, category) {
-  const layer = foliageSpacingLayer(grid, category);
+function foliageSpacingFits(grid, x, z, category, spacing) {
+  const layer = foliageSpacingLayer(grid, category, spacing);
   const cell = layer.cellSize;
   const cx = Math.floor(x / cell);
   const cz = Math.floor(z / cell);
-  const minDistSq = layer.minDistSq;
-  for (let dz = -1; dz <= 1; dz++) {
-    for (let dx = -1; dx <= 1; dx++) {
+  const minDistSq = (spacing * 0.92) ** 2;
+  const range = Math.max(1, Math.ceil(spacing / cell));
+  for (let dz = -range; dz <= range; dz++) {
+    for (let dx = -range; dx <= range; dx++) {
       const bucket = layer.cells.get(foliageCellKey(cx + dx, cz + dz));
       if (!bucket) continue;
       for (let i = 0, n = bucket.length; i < n; i += 2) {
@@ -891,8 +2093,8 @@ function foliageSpacingFits(grid, x, z, category) {
   return true;
 }
 
-function registerFoliageSpacing(grid, x, z, category) {
-  const layer = foliageSpacingLayer(grid, category);
+function registerFoliageSpacing(grid, x, z, category, spacing) {
+  const layer = foliageSpacingLayer(grid, category, spacing);
   const cell = layer.cellSize;
   const key = foliageCellKey(Math.floor(x / cell), Math.floor(z / cell));
   let bucket = layer.cells.get(key);
@@ -903,29 +2105,18 @@ function registerFoliageSpacing(grid, x, z, category) {
   bucket.push(x, z);
 }
 
-function scatterDenseClump(entry, x, z, density, spacing, cellRng, chunkBins, waterY, countRef, targetCount, seed, templates, spacingGrid) {
-  const spread = Math.max(FOLIAGE_MIN_SPACING.tree * 2.2, spacing * 0.55);
-  const extraCount = Math.floor(2 + density * density * 10);
-  const jitter = Math.min(spacing * (0.35 + density * 0.45), spread);
-  for (let e = 0; e < extraCount && countRef.value < targetCount; e++) {
-    const jx = x + (cellRng() - 0.5) * jitter;
-    const jz = z + (cellRng() - 0.5) * jitter;
-    if (forestRegionDensity(jx, jz, seed) < density * 0.35) continue;
-    tryPlaceForestTree(entry, jx, jz, cellRng, chunkBins, waterY, countRef, templates, spacingGrid);
-  }
-}
+function tryPlaceZoneFoliage(ctx, x, z, cellRng, skipGuideCheck = false) {
+  const {
+    entry, rule, typePool, chunkBins, waterY, countRef, targetCount,
+    templates, spacingGrid, stats,
+  } = ctx;
+  if (countRef.value >= targetCount) return false;
 
-function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef, templates, spacingGrid, stats = null, skipGuideCheck = false) {
-  // Guide first — cheapest reject for off-zone / clump jitter.
-  if (!skipGuideCheck && sampleForestGuideStep(entry, x, z) !== FOREST_SPAWN_GUIDE_STEP) {
+  if (!skipGuideCheck && sampleForestGuideStep(entry, x, z) !== rule.step) {
     if (stats) {
       stats.samples++;
       stats.outOfBand++;
     }
-    return false;
-  }
-
-  if (spacingGrid && !foliageSpacingFits(spacingGrid, x, z, 'tree')) {
     return false;
   }
 
@@ -938,67 +2129,214 @@ function tryPlaceForestTree(entry, x, z, cellRng, chunkBins, waterY, countRef, t
     }
     stats.minH = Math.min(stats.minH, sample.heightNorm);
     stats.maxH = Math.max(stats.maxH, sample.heightNorm);
-    if (sample.y <= waterY + TERRAIN_FOREST_WATER_CLEARANCE) {
+    if (isFoliageBelowWater(sample.y, waterY)) {
       stats.underwater++;
       return false;
     }
-    stats.ok++;
-  } else if (!sample || sample.y <= waterY + TERRAIN_FOREST_WATER_CLEARANCE) {
+    if (isTerrainTooSteep(sample)) {
+      stats.steep = (stats.steep || 0) + 1;
+      return false;
+    }
+  } else if (!sample || isFoliageBelowWater(sample.y, waterY) || isTerrainTooSteep(sample)) {
     return false;
   }
 
-  const type = pickFoliageType(templates._typeWeights, cellRng);
-  const tmpl = templates[type];
-  const scale = THREE.MathUtils.lerp(tmpl.scaleMin, tmpl.scaleMax, cellRng());
+  const picked = pickWeightedPoolEntry(typePool, cellRng);
+  if (!picked) return false;
+  const spacing = picked.spacing || rule.spacing;
+  if (!foliageSpacingFits(spacingGrid, x, z, picked.category, spacing)) return false;
+  const scale = THREE.MathUtils.lerp(picked.scaleMin, picked.scaleMax, cellRng());
+  const sink = scale * (picked.groundSink ?? 0.03);
   addTreeToChunkBin(chunkBins, {
     x,
-    y: sample.y,
+    y: sample.y - sink,
     z,
     scale,
     spin: cellRng() * Math.PI * 2,
-    type,
+    type: picked.index,
   });
-  if (spacingGrid) registerFoliageSpacing(spacingGrid, x, z, 'tree');
+  registerFoliageSpacing(spacingGrid, x, z, picked.category, spacing);
+  if (stats) stats.ok++;
   countRef.value++;
   return true;
 }
 
-async function generateMegaForestPlacementsAsync(entry, targetCount, seed, generation, templates) {
-  const waterY = entry.waterMesh?.position.y ?? HEIGHT_SCALE * TERRAIN_WATER_HEIGHT_NORM;
-  const zoneIdx = collectForestGuideZoneIndices(entry.forestGuide);
+function scatterZoneClump(ctx, x, z, density, cellRng) {
+  const { rule, seed, countRef, targetCount } = ctx;
+  const extra = Math.floor(2 + density * density * rule.clumpExtra);
+  // Keep group clumps tight so dry trees don't bleed into neighboring zone 4 forest.
+  const jitter = rule.spacing * (rule.groupOnly ? 1.15 : 1.4);
+  for (let e = 0; e < extra && countRef.value < targetCount; e++) {
+    const jx = x + (cellRng() - 0.5) * jitter;
+    const jz = z + (cellRng() - 0.5) * jitter;
+    if (forestRegionDensity(jx, jz, seed, rule.bareCutoff) < density * 0.4) continue;
+    // Always enforce guide step — never allow cross-zone bleed.
+    tryPlaceZoneFoliage(ctx, jx, jz, cellRng, false);
+  }
+}
+
+async function placeGrassZoneFastAsync(entry, rule, typePool, seed, generation, templates, chunkBins, waterY, totalCountRef, spacingGrid) {
+  const zoneIdx = collectForestGuideZoneIndices(entry.forestGuide, rule.step);
   const zoneCount = zoneIdx.length;
-  if (!zoneCount) {
-    console.warn('Forest guide has no zone-4 cells');
-    return { chunkBins: new Map(), count: 0, waterY };
+  if (!zoneCount || !typePool.length) {
+    return { count: 0, zoneCount, target: 0 };
   }
 
   const guide = entry.forestGuide;
   const zoneFrac = zoneCount / Math.max(1, guide.width * guide.height);
   const zoneArea = (TERRAIN_SIZE * TERRAIN_SIZE) * zoneFrac;
-  // Space against zone area only — avoids a huge empty world grid + endless fill.
-  const spacing = Math.sqrt(zoneArea / Math.max(1, targetCount * 1.05));
-  const chunkBins = new Map();
-  const countRef = { value: 0 };
-  const spacingGrid = createFoliageSpacingGrid();
-  const stats = { samples: 0, ok: 0, noSample: 0, underwater: 0, outOfBand: 0, minH: 1, maxH: 0, zoneCount };
+  const targetCount = Math.min(
+    rule.maxCount,
+    Math.max(1, Math.floor(zoneArea / (rule.spacing * rule.spacing) * rule.fill)),
+  );
 
-  // Visit ~1.35x target zone cells so density + spacing can reject without a long fill.
-  const visitCount = Math.min(zoneCount, Math.ceil(targetCount * 1.35));
-  const stride = Math.max(1, Math.floor(zoneCount / visitCount));
+  const countRef = { value: 0 };
+  const occupied = new Set();
+  const cell = rule.spacing;
+  const pack = (x, z, spacing) => {
+    const cx = Math.floor(x / spacing);
+    const cz = Math.floor(z / spacing);
+    return (cx + 500000) * 1000003 + (cz + 500000);
+  };
+
+  const worldPerPxX = TERRAIN_SIZE / guide.width;
+  const worldPerPxZ = TERRAIN_SIZE / guide.height;
+  // Fewer subsamples per guide pixel — spread budget across the whole zone instead.
+  const subX = Math.max(1, Math.min(4, Math.floor(worldPerPxX / cell)));
+  const subZ = Math.max(1, Math.min(4, Math.floor(worldPerPxZ / cell)));
+  const perPixel = Math.max(1, subX * subZ);
+  // Stride through zone pixels so lakes / late rows aren't starved when maxCount caps out.
+  const visitBudget = Math.min(zoneCount, Math.ceil((targetCount * 1.15) / perPixel));
+  const stride = Math.max(1, Math.floor(zoneCount / Math.max(1, visitBudget)));
+  const half = TERRAIN_SIZE * 0.5;
+  const meshX = entry.mesh?.position.x ?? 0;
+  const meshZ = entry.mesh?.position.z ?? 0;
   let visit = 0;
 
-  const tryPlaceAt = (x, z, cellRng, withStats, allowClump) => {
-    const density = forestRegionDensity(x, z, seed);
-    if (density <= 0 || cellRng() > forestPlacementChance(density)) return false;
-    if (!tryPlaceForestTree(
-      entry, x, z, cellRng, chunkBins, waterY, countRef, templates, spacingGrid,
-      withStats ? stats : null, true,
-    )) return false;
-    if (allowClump && density > 0.45) {
-      scatterDenseClump(
-        entry, x, z, density, spacing, cellRng, chunkBins, waterY,
-        countRef, targetCount, seed, templates, spacingGrid,
+  const tryFastPlace = (x, z, rng) => {
+    if (countRef.value >= targetCount) return false;
+    const picked = pickWeightedPoolEntry(typePool, rng);
+    if (!picked) return false;
+    const spacing = picked.spacing || cell;
+    const key = pack(x, z, spacing);
+    if (occupied.has(key)) return false;
+    const isTree = picked.category === 'tree' || picked.category === 'tree-dry';
+    if (isTree) {
+      if (spacingGrid && !foliageSpacingFits(spacingGrid, x, z, picked.category, spacing)) return false;
+    }
+    if (rng() > 0.97) return false;
+    const sample = sampleTerrainSurface(entry, x, z);
+    if (!sample) return false;
+    // Ground cover (incl. lake beds) ignores steep reject — trees still respect it.
+    if (isTree && isTerrainTooSteep(sample)) return false;
+    if (isFoliageBelowWater(sample.y, waterY)) return false;
+    occupied.add(key);
+    if (spacingGrid && isTree) {
+      registerFoliageSpacing(spacingGrid, x, z, picked.category, spacing);
+    }
+    const scale = THREE.MathUtils.lerp(picked.scaleMin, picked.scaleMax, rng());
+    const sink = scale * (picked.groundSink ?? 0.15);
+    addTreeToChunkBin(chunkBins, {
+      x,
+      y: sample.y - sink,
+      z,
+      scale,
+      spin: rng() * Math.PI * 2,
+      type: picked.index,
+    });
+    countRef.value++;
+    return true;
+  };
+
+  await new Promise((resolve) => {
+    const step = () => {
+      if (generation !== terrainForestBuildGeneration) {
+        resolve(false);
+        return;
+      }
+      const start = performance.now();
+      while (
+        visit < visitBudget
+        && countRef.value < targetCount
+        && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS
+      ) {
+        const cellI = Math.min(zoneCount - 1, visit * stride);
+        visit++;
+        const index = zoneIdx[cellI];
+        const px = index % guide.width;
+        const py = (index / guide.width) | 0;
+        const rng = mulberry32(seed + rule.step * 7919 + index * 2654435761);
+        for (let sz = 0; sz < subZ && countRef.value < targetCount; sz++) {
+          for (let sx = 0; sx < subX && countRef.value < targetCount; sx++) {
+            const gx = (px + (sx + rng()) / subX) / guide.width;
+            const gz = (py + (sz + rng()) / subZ) / guide.height;
+            const x = gx * TERRAIN_SIZE - half + meshX;
+            const z = gz * TERRAIN_SIZE - half + meshZ;
+            tryFastPlace(x, z, rng);
+          }
+        }
+      }
+      loadingMgr.set(
+        'Forest placement',
+        'Loading',
+        `${rule.label} ${countRef.value.toLocaleString()} / ${targetCount.toLocaleString()}`,
       );
+      if (countRef.value >= targetCount || visit >= visitBudget) {
+        resolve(true);
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    step();
+  });
+
+  if (generation !== terrainForestBuildGeneration) return null;
+
+  occupied.clear();
+  totalCountRef.value += countRef.value;
+  return { count: countRef.value, zoneCount, target: targetCount, zoneFrac };
+}
+
+async function placeFoliageZoneAsync(entry, rule, typePool, seed, generation, templates, chunkBins, spacingGrid, waterY, totalCountRef) {
+  if (rule.fast) {
+    return placeGrassZoneFastAsync(
+      entry, rule, typePool, seed, generation, templates, chunkBins, waterY, totalCountRef, spacingGrid,
+    );
+  }
+
+  const zoneIdx = collectForestGuideZoneIndices(entry.forestGuide, rule.step);
+  const zoneCount = zoneIdx.length;
+  if (!zoneCount || !typePool.length) {
+    return { count: 0, zoneCount, target: 0 };
+  }
+
+  const guide = entry.forestGuide;
+  const zoneFrac = zoneCount / Math.max(1, guide.width * guide.height);
+  const zoneArea = (TERRAIN_SIZE * TERRAIN_SIZE) * zoneFrac;
+  const targetCount = Math.min(
+    rule.maxCount,
+    Math.max(1, Math.floor(zoneArea / (rule.spacing * rule.spacing) * rule.fill)),
+  );
+  const countRef = { value: 0 };
+  const stats = { samples: 0, ok: 0, noSample: 0, underwater: 0, outOfBand: 0, minH: 1, maxH: 0 };
+  const ctx = {
+    entry, rule, typePool, chunkBins, waterY, countRef, targetCount, templates, spacingGrid, stats, seed,
+  };
+
+  const visitMult = rule.groupOnly ? 1.8 : 1.45;
+  const visitCount = Math.min(zoneCount, Math.ceil(targetCount * visitMult));
+  const stride = Math.max(1, Math.floor(zoneCount / Math.max(1, visitCount)));
+  let visit = 0;
+
+  const tryPlaceAt = (x, z, cellRng) => {
+    const density = forestRegionDensity(x, z, seed, rule.bareCutoff);
+    if (density <= 0) return false;
+    // Group zones: only seed in denser noise cores, then clump around them.
+    if (rule.groupOnly && density < rule.clumpThreshold) return false;
+    if (cellRng() > forestPlacementChance(density, rule.densityPower)) return false;
+    if (!tryPlaceZoneFoliage(ctx, x, z, cellRng, true)) return false;
+    if (rule.groupOnly || density >= rule.clumpThreshold) {
+      scatterZoneClump(ctx, x, z, density, cellRng);
     }
     return true;
   };
@@ -1016,13 +2354,17 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
         && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS
       ) {
         const cellI = Math.min(zoneCount - 1, visit * stride);
-        const cellRng = mulberry32(seed + zoneIdx[cellI] * 2654435761);
+        const cellRng = mulberry32(seed + rule.step * 10007 + zoneIdx[cellI] * 2654435761);
         const { x, z } = worldFromForestGuideIndex(entry, zoneIdx[cellI], cellRng);
-        tryPlaceAt(x, z, cellRng, true, true);
+        tryPlaceAt(x, z, cellRng);
         visit++;
       }
-      const pct = Math.min(99, Math.round((countRef.value / Math.max(1, targetCount)) * 100));
-      loadingMgr.set('Forest placement', 'Loading', `${pct}% · ${countRef.value.toLocaleString()}`);
+      const placed = totalCountRef.value + countRef.value;
+      loadingMgr.set(
+        'Forest placement',
+        'Loading',
+        `${rule.label} ${countRef.value.toLocaleString()} · total ${placed.toLocaleString()}`,
+      );
       if (countRef.value >= targetCount || visit >= visitCount) {
         resolve(true);
         return;
@@ -1034,10 +2376,13 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
 
   if (generation !== terrainForestBuildGeneration) return null;
 
+  // Fill carpet zones fully; for group zones, a lighter seed pass to guarantee some stands.
   if (countRef.value < targetCount) {
-    const fillRng = mulberry32(seed + 99991);
+    const fillRng = mulberry32(seed + 99991 + rule.step * 17);
     let fillAttempts = 0;
-    const fillMax = Math.min(targetCount * 6, zoneCount * 2);
+    const fillMax = rule.groupOnly
+      ? Math.min(targetCount * 8, zoneCount)
+      : Math.min(targetCount * 6, zoneCount * 2);
     await new Promise((resolve) => {
       const step = () => {
         if (generation !== terrainForestBuildGeneration) {
@@ -1053,10 +2398,13 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
           fillAttempts++;
           const idx = zoneIdx[(fillRng() * zoneCount) | 0];
           const { x, z } = worldFromForestGuideIndex(entry, idx, fillRng);
-          tryPlaceAt(x, z, fillRng, false, true);
+          tryPlaceAt(x, z, fillRng);
         }
-        const pct = Math.min(99, Math.round((countRef.value / Math.max(1, targetCount)) * 100));
-        loadingMgr.set('Forest placement', 'Loading', `Fill ${pct}% · ${countRef.value.toLocaleString()}`);
+        loadingMgr.set(
+          'Forest placement',
+          'Loading',
+          `${rule.label} fill ${countRef.value.toLocaleString()}`,
+        );
         if (countRef.value >= targetCount || fillAttempts >= fillMax) {
           resolve();
           return;
@@ -1067,76 +2415,100 @@ async function generateMegaForestPlacementsAsync(entry, targetCount, seed, gener
     });
   }
 
-  if (countRef.value < targetCount) {
-    const topUpRng = mulberry32(seed + 77777);
-    let topUpAttempts = 0;
-    const need = targetCount - countRef.value;
-    const topUpMax = Math.min(need * 8, zoneCount);
-    await new Promise((resolve) => {
-      const step = () => {
-        if (generation !== terrainForestBuildGeneration) {
-          resolve();
-          return;
-        }
-        const start = performance.now();
-        while (
-          countRef.value < targetCount
-          && topUpAttempts < topUpMax
-          && performance.now() - start < TERRAIN_FOREST_PLACEMENT_BATCH_MS
-        ) {
-          topUpAttempts++;
-          const idx = zoneIdx[(topUpRng() * zoneCount) | 0];
-          const { x, z } = worldFromForestGuideIndex(entry, idx, topUpRng);
-          const density = forestRegionDensity(x, z, seed);
-          if (density < 0.32 || topUpRng() > forestPlacementChance(density)) continue;
-          tryPlaceForestTree(
-            entry, x, z, topUpRng, chunkBins, waterY, countRef, templates, spacingGrid,
-            null, true,
-          );
-        }
-        if (countRef.value >= targetCount || topUpAttempts >= topUpMax) {
-          resolve();
-          return;
-        }
-        requestAnimationFrame(step);
-      };
-      step();
-    });
+  totalCountRef.value += countRef.value;
+  return { count: countRef.value, zoneCount, target: targetCount, stats, zoneFrac };
+}
+
+async function generateMegaForestPlacementsAsync(entry, _targetCount, seed, generation, templates) {
+  const waterY = entry.waterMesh?.position.y ?? HEIGHT_SCALE * TERRAIN_WATER_HEIGHT_NORM;
+  const chunkBins = new Map();
+  const spacingGrid = createFoliageSpacingGrid();
+  const totalCountRef = { value: 0 };
+  const zoneStats = {};
+
+  for (const rule of FOLIAGE_ZONE_RULES) {
+    if (generation !== terrainForestBuildGeneration) return null;
+    const typePool = templates._zonePools?.[rule.step] || [];
+    const result = await placeFoliageZoneAsync(
+      entry, rule, typePool, seed, generation, templates, chunkBins, spacingGrid, waterY, totalCountRef,
+    );
+    if (!result) return null;
+    zoneStats[rule.step] = result;
   }
 
-  if (generation !== terrainForestBuildGeneration) return null;
-  console.info(`Forest placed ${countRef.value.toLocaleString()} / ${targetCount.toLocaleString()} trees`, stats);
-  window.__forestDebug = { count: countRef.value, target: targetCount, waterY, stats, zoneFrac };
-  return { chunkBins, count: countRef.value, waterY };
+  console.info(
+    `Foliage placed ${totalCountRef.value.toLocaleString()}`,
+    Object.fromEntries(
+      Object.entries(zoneStats).map(([step, s]) => [
+        `zone${step}`,
+        `${(s.count || 0).toLocaleString()} / ${(s.target || 0).toLocaleString()}`,
+      ]),
+    ),
+  );
+  window.__forestDebug = {
+    count: totalCountRef.value,
+    waterY,
+    zoneStats,
+    byZone: Object.fromEntries(
+      Object.entries(zoneStats).map(([step, s]) => [step, { count: s.count, target: s.target }]),
+    ),
+  };
+  return { chunkBins, count: totalCountRef.value, waterY };
 }
 
 function pickForestSpawnTree(chunkBins, templates) {
   let bestTrees = null;
+  let bestN = 0;
   for (const trees of chunkBins.values()) {
-    if (!bestTrees || trees.length > bestTrees.length) bestTrees = trees;
-  }
-  if (!bestTrees?.length) return null;
-  const treeTypes = new Set(
-    (templates || [])
-      .map((t, i) => (t.category === 'tree' ? i : -1))
-      .filter((i) => i >= 0),
-  );
-  const candidates = treeTypes.size
-    ? bestTrees.filter((t) => treeTypes.has(t.type))
-    : bestTrees;
-  const pool = candidates.length ? candidates : bestTrees;
-  const cx = pool.reduce((s, t) => s + t.x, 0) / pool.length;
-  const cz = pool.reduce((s, t) => s + t.z, 0) / pool.length;
-  let best = pool[0];
-  let bestDist = Infinity;
-  for (const tree of pool) {
-    const d = (tree.x - cx) ** 2 + (tree.z - cz) ** 2;
-    if (d < bestDist) {
-      bestDist = d;
-      best = tree;
+    const n = chunkBinCount(trees);
+    if (n > bestN) {
+      bestTrees = trees;
+      bestN = n;
     }
   }
-  return best;
+  if (!bestTrees?.length) return null;
+
+  const zone4Pool = templates?._zonePools?.[4] || [];
+  const zone4Types = new Set(zone4Pool.map((e) => e.index));
+  const indices = [];
+  for (let i = 0; i < bestTrees.length; i += 6) {
+    const type = bestTrees[i + 5] | 0;
+    if (!zone4Types.size || zone4Types.has(type)) indices.push(i);
+  }
+  const pool = indices.length ? indices : (() => {
+    const all = [];
+    for (let i = 0; i < bestTrees.length; i += 6) all.push(i);
+    return all;
+  })();
+
+  let cx = 0;
+  let cz = 0;
+  for (const i of pool) {
+    cx += bestTrees[i];
+    cz += bestTrees[i + 2];
+  }
+  cx /= pool.length;
+  cz /= pool.length;
+
+  let bestI = pool[0];
+  let bestDist = Infinity;
+  for (const i of pool) {
+    const dx = bestTrees[i] - cx;
+    const dz = bestTrees[i + 2] - cz;
+    const d = dx * dx + dz * dz;
+    if (d < bestDist) {
+      bestDist = d;
+      bestI = i;
+    }
+  }
+  return {
+    x: bestTrees[bestI],
+    y: bestTrees[bestI + 1],
+    z: bestTrees[bestI + 2],
+    scale: bestTrees[bestI + 3],
+    spin: bestTrees[bestI + 4],
+    type: bestTrees[bestI + 5] | 0,
+  };
 }
 
 function findForestSpawn(entry, seed) {
@@ -1151,7 +2523,7 @@ function findForestSpawn(entry, seed) {
     const density = forestRegionDensity(x, z, seed);
     if (density < 0.2) continue;
     const sample = sampleTerrainSurface(entry, x, z);
-    if (!sample || !isForestTerrain(entry, x, z, sample.y, waterY)) continue;
+    if (!sample || !isForestTerrain(entry, x, z, sample.y, waterY, sample)) continue;
     const score = density * sample.heightNorm;
     if (score > bestScore) {
       bestScore = score;
@@ -1186,7 +2558,13 @@ async function buildTerrainForest() {
     templates,
   );
   if (!result || generation !== terrainForestBuildGeneration) return;
-  loadingMgr.set('Forest placement', 'Complete', `${result.count.toLocaleString()} trees`);
+  loadingMgr.set('Forest placement', 'Complete', `${result.count.toLocaleString()} plants`);
+  const zoneSummary = result && window.__forestDebug?.byZone
+    ? Object.entries(window.__forestDebug.byZone)
+      .map(([step, s]) => `z${step}:${Number(s.count || 0).toLocaleString()}`)
+      .join(' · ')
+    : '';
+  if (zoneSummary) loadingMgr.set('Forest placement', 'Complete', zoneSummary);
 
   const system = {
     root: new THREE.Group(),
@@ -1433,7 +2811,7 @@ function setMapView(open) {
 }
 
 function resolveCameraCollision(h) {
-  if (!terrainMesh || mapView) return;
+  if (!terrainMesh || mapView || mapEditorOpen) return;
   const target = controls.target;
   const dist = camera.position.distanceTo(target);
   if (dist < 1e-6) return;
@@ -1448,7 +2826,7 @@ function resolveCameraCollision(h) {
 }
 
 function followCamera(delta) {
-  if (mapView) return;
+  if (mapView || mapEditorOpen) return;
   const h = character.height;
   const pos = character.group.position;
   const idealTargetY = cameraTargetY(pos, h);
@@ -1463,20 +2841,1385 @@ function followCamera(delta) {
 }
 
 function updateCameraCollision() {
-  if (!character || mapView) return;
+  if (!character || mapView || mapEditorOpen) return;
   resolveCameraCollision(character.height);
+}
+
+// ---------- Teleport skill ----------
+
+const TELEPORT_FX_SLOTS = 2;
+const TELEPORT_FX_PARTICLES = 48;
+const TELEPORT_FX_LIFETIME = 0.55;
+
+const pointerNdc = new THREE.Vector2();
+
+window.addEventListener('pointermove', (e) => {
+  pointerNdc.x = (e.clientX / innerWidth) * 2 - 1;
+  pointerNdc.y = -(e.clientY / innerHeight) * 2 + 1;
+});
+
+// Fixed pool: shared material, one Points per slot, buffers rewritten on cast.
+const teleportFxMaterial = new THREE.PointsMaterial({
+  color: 0x7dd3fc, size: 1, transparent: true, opacity: 0.9,
+  depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+});
+const teleportFx = [];
+let teleportFxActiveCount = 0;
+for (let s = 0; s < TELEPORT_FX_SLOTS; s++) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TELEPORT_FX_PARTICLES * 3), 3));
+  const points = new THREE.Points(geometry, teleportFxMaterial);
+  points.visible = false;
+  points.frustumCulled = false;
+  scene.add(points);
+  teleportFx.push({ points, velocities: new Float32Array(TELEPORT_FX_PARTICLES * 3), age: 0, active: false });
+}
+
+function spawnTeleportBurst(center) {
+  let slot = null;
+  for (let s = 0; s < teleportFx.length; s++) {
+    if (!teleportFx[s].active) { slot = teleportFx[s]; break; }
+  }
+  if (!slot) {
+    slot = teleportFx[0];
+    for (let s = 1; s < teleportFx.length; s++) {
+      if (teleportFx[s].age > slot.age) slot = teleportFx[s];
+    }
+  }
+  const h = character.height;
+  teleportFxMaterial.size = Math.max(0.3, h * 0.15);
+  const posAttr = slot.points.geometry.attributes.position;
+  const arr = posAttr.array;
+  const vel = slot.velocities;
+  for (let i = 0; i < TELEPORT_FX_PARTICLES; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * h * 0.35;
+    arr[i * 3] = Math.cos(a) * r;
+    arr[i * 3 + 1] = Math.random() * h;
+    arr[i * 3 + 2] = Math.sin(a) * r;
+    vel[i * 3] = Math.cos(a) * h * (0.6 + Math.random());
+    vel[i * 3 + 1] = h * (0.8 + Math.random() * 1.6);
+    vel[i * 3 + 2] = Math.sin(a) * h * (0.6 + Math.random());
+  }
+  posAttr.needsUpdate = true;
+  slot.points.position.copy(center);
+  slot.points.visible = true;
+  slot.age = 0;
+  if (!slot.active) { slot.active = true; teleportFxActiveCount++; }
+}
+
+function updateTeleportEffects(delta) {
+  if (teleportFxActiveCount === 0) return;
+  let minAge = TELEPORT_FX_LIFETIME;
+  for (let s = 0; s < teleportFx.length; s++) {
+    const slot = teleportFx[s];
+    if (!slot.active) continue;
+    slot.age += delta;
+    if (slot.age >= TELEPORT_FX_LIFETIME) {
+      slot.active = false;
+      slot.points.visible = false;
+      teleportFxActiveCount--;
+      continue;
+    }
+    if (slot.age < minAge) minAge = slot.age;
+    const posAttr = slot.points.geometry.attributes.position;
+    const arr = posAttr.array;
+    const vel = slot.velocities;
+    for (let i = 0; i < arr.length; i += 3) {
+      arr[i] += vel[i] * delta;
+      arr[i + 1] += vel[i + 1] * delta;
+      arr[i + 2] += vel[i + 2] * delta;
+    }
+    posAttr.needsUpdate = true;
+  }
+  teleportFxMaterial.opacity = 0.9 * (1 - minAge / TELEPORT_FX_LIFETIME);
+}
+
+const _tpPoint = new THREE.Vector3();
+
+function triggerTeleport() {
+  if (!character || !terrainMesh || mapView) return;
+  _ray.setFromCamera(pointerNdc, camera);
+  _ray.far = Infinity;
+  const hits = _ray.intersectObject(terrainMesh, false);
+  if (hits.length === 0) return;
+  _tpPoint.copy(hits[0].point);
+  const pos = character.group.position;
+  spawnTeleportBurst(pos);
+  pos.x = THREE.MathUtils.clamp(_tpPoint.x, -FLOOR_BOUND, FLOOR_BOUND);
+  pos.z = THREE.MathUtils.clamp(_tpPoint.z, -FLOOR_BOUND, FLOOR_BOUND);
+  character.vy = 0;
+  character.airborne = false;
+  character.oneShot = null;
+  snapToGround();
+  const state = isMoving() ? 'walk' : 'idle';
+  if (character.state !== state) setGameplayState(state);
+  // Snap the follow camera along with the character, preserving orbit offset.
+  _camDelta.set(
+    pos.x - controls.target.x,
+    cameraTargetY(pos, character.height) - controls.target.y,
+    pos.z - controls.target.z,
+  );
+  camera.position.add(_camDelta);
+  controls.target.add(_camDelta);
+  spawnTeleportBurst(pos);
 }
 
 // ---------- Input ----------
 
+const waterState = {
+  opacity: WATER_DEFAULTS.opacity,
+  waveHeight: WATER_DEFAULTS.waveHeight,
+  waveScale: WATER_DEFAULTS.waveScale,
+  foamStrength: WATER_DEFAULTS.foamStrength,
+  sssStrength: WATER_DEFAULTS.sssStrength,
+  reflection: WATER_DEFAULTS.reflection,
+  specular: WATER_DEFAULTS.specular,
+  roughness: WATER_DEFAULTS.roughness,
+  absorption: WATER_DEFAULTS.absorption,
+  distortion: WATER_DEFAULTS.distortion,
+  deepColor: new THREE.Color(WATER_DEFAULTS.deepColor),
+  shallowColor: new THREE.Color(WATER_DEFAULTS.shallowColor),
+  foamColor: new THREE.Color(WATER_DEFAULTS.foamColor),
+};
+
+const waterReflect = {
+  target: null,
+  camera: new THREE.PerspectiveCamera(),
+  textureMatrix: new THREE.Matrix4(),
+  clipPlane: new THREE.Plane(),
+  _mirrorPos: new THREE.Vector3(),
+  _normal: new THREE.Vector3(),
+  _view: new THREE.Vector3(),
+  _target: new THREE.Vector3(),
+  _q: new THREE.Vector4(),
+  _lookAt: new THREE.Vector3(0, 0, -1),
+  _rotation: new THREE.Matrix4(),
+  _clipVector: new THREE.Vector4(),
+  _camWorld: new THREE.Vector3(),
+};
+
+function ensureWaterReflectTarget() {
+  if (waterReflect.target) return waterReflect.target;
+  waterReflect.target = new THREE.WebGLRenderTarget(WATER_REFLECT_SIZE, WATER_REFLECT_SIZE, {
+    type: THREE.HalfFloatType,
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+  });
+  return waterReflect.target;
+}
+
+function setForestReflectionVisible(visible) {
+  const system = terrainForestSystem;
+  if (!system?.builtChunks) return;
+  for (const chunk of system.builtChunks.values()) {
+    if (chunk.group) chunk.group.visible = visible;
+  }
+}
+
+function renderWaterReflection(waterMesh, renderer, scene, camera) {
+  const rt = ensureWaterReflectTarget();
+  const mirrorCamera = waterReflect.camera;
+  const textureMatrix = waterReflect.textureMatrix;
+  const waterY = getWaterHeightY();
+
+  waterReflect._camWorld.setFromMatrixPosition(camera.matrixWorld);
+  waterReflect._mirrorPos.set(waterReflect._camWorld.x, waterY, waterReflect._camWorld.z);
+
+  waterReflect._normal.set(0, 1, 0);
+  waterReflect._view.subVectors(waterReflect._mirrorPos, waterReflect._camWorld);
+  if (waterReflect._view.dot(waterReflect._normal) > 0) {
+    if (waterMesh.material?.uniforms) waterMesh.material.uniforms.uHasMirror.value = 0;
+    return;
+  }
+
+  waterReflect._view.reflect(waterReflect._normal).negate().add(waterReflect._mirrorPos);
+
+  waterReflect._rotation.extractRotation(camera.matrixWorld);
+  waterReflect._lookAt.set(0, 0, -1).applyMatrix4(waterReflect._rotation).add(waterReflect._camWorld);
+  waterReflect._target.subVectors(waterReflect._mirrorPos, waterReflect._lookAt).reflect(waterReflect._normal).negate().add(waterReflect._mirrorPos);
+
+  mirrorCamera.position.copy(waterReflect._view);
+  mirrorCamera.up.set(0, 1, 0);
+  mirrorCamera.lookAt(waterReflect._target);
+  mirrorCamera.far = camera.far;
+  mirrorCamera.near = Math.max(0.5, camera.near);
+  mirrorCamera.fov = camera.fov;
+  mirrorCamera.aspect = camera.aspect;
+  mirrorCamera.updateProjectionMatrix();
+  mirrorCamera.updateMatrixWorld();
+
+  textureMatrix.set(
+    0.5, 0.0, 0.0, 0.5,
+    0.0, 0.5, 0.0, 0.5,
+    0.0, 0.0, 0.5, 0.5,
+    0.0, 0.0, 0.0, 1.0,
+  );
+  textureMatrix.multiply(mirrorCamera.projectionMatrix);
+  textureMatrix.multiply(mirrorCamera.matrixWorldInverse);
+
+  waterReflect.clipPlane.setFromNormalAndCoplanarPoint(waterReflect._normal, waterReflect._mirrorPos);
+  waterReflect.clipPlane.applyMatrix4(mirrorCamera.matrixWorldInverse);
+  waterReflect._clipVector.set(
+    waterReflect.clipPlane.normal.x,
+    waterReflect.clipPlane.normal.y,
+    waterReflect.clipPlane.normal.z,
+    waterReflect.clipPlane.constant,
+  );
+
+  const projectionMatrix = mirrorCamera.projectionMatrix;
+  waterReflect._q.x = (Math.sign(waterReflect._clipVector.x) + projectionMatrix.elements[8]) / projectionMatrix.elements[0];
+  waterReflect._q.y = (Math.sign(waterReflect._clipVector.y) + projectionMatrix.elements[9]) / projectionMatrix.elements[5];
+  waterReflect._q.z = -1;
+  waterReflect._q.w = (1 + projectionMatrix.elements[10]) / projectionMatrix.elements[14];
+  waterReflect._clipVector.multiplyScalar(2 / waterReflect._clipVector.dot(waterReflect._q));
+  projectionMatrix.elements[2] = waterReflect._clipVector.x;
+  projectionMatrix.elements[6] = waterReflect._clipVector.y;
+  projectionMatrix.elements[10] = waterReflect._clipVector.z + 1;
+  projectionMatrix.elements[14] = waterReflect._clipVector.w;
+
+  const prevTarget = renderer.getRenderTarget();
+  const prevShadow = renderer.shadowMap.autoUpdate;
+  const prevXr = renderer.xr.enabled;
+  const prevClear = renderer.autoClear;
+  const charVisible = character?.group ? character.group.visible : true;
+  waterMesh.visible = false;
+  if (character?.group) character.group.visible = false;
+  setForestReflectionVisible(false);
+  renderer.xr.enabled = false;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.autoClear = true;
+  renderer.setRenderTarget(rt);
+  renderer.state.buffers.depth.setMask(true);
+  renderer.clear();
+  renderer.render(scene, mirrorCamera);
+  setForestReflectionVisible(true);
+  if (character?.group) character.group.visible = charVisible;
+  waterMesh.visible = true;
+  renderer.xr.enabled = prevXr;
+  renderer.shadowMap.autoUpdate = prevShadow;
+  renderer.autoClear = prevClear;
+  renderer.setRenderTarget(prevTarget);
+
+  const material = waterMesh.material;
+  if (material?.uniforms) {
+    material.uniforms.uMirrorMap.value = rt.texture;
+    material.uniforms.uTextureMatrix.value.copy(textureMatrix);
+    material.uniforms.uHasMirror.value = 1;
+  }
+}
+
+function createOceanWaterMaterial() {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uDeepColor: { value: waterState.deepColor.clone() },
+      uShallowColor: { value: waterState.shallowColor.clone() },
+      uFoamColor: { value: waterState.foamColor.clone() },
+      uOpacity: { value: waterState.opacity },
+      uWaveHeight: { value: 40 },
+      uWaveScale: { value: 1 },
+      uFoamStrength: { value: waterState.foamStrength },
+      uSssStrength: { value: waterState.sssStrength },
+      uReflection: { value: waterState.reflection },
+      uSpecular: { value: waterState.specular },
+      uRoughness: { value: waterState.roughness },
+      uSunDirection: { value: new THREE.Vector3(0, 1, 0) },
+      uSunColor: { value: new THREE.Color(0xfff1d6) },
+      uSkyTurbidity: { value: 10 },
+      uSkyRayleigh: { value: 1 },
+      uMirrorMap: { value: null },
+      uTextureMatrix: { value: new THREE.Matrix4() },
+      uHasMirror: { value: 0 },
+      uDistortion: { value: 0.35 },
+      uAbsorption: { value: 0.55 },
+    },
+    vertexShader: `
+      uniform float uTime;
+      uniform float uWaveHeight;
+      uniform float uWaveScale;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
+      varying vec4 vMirrorCoord;
+      varying float vFoam;
+      varying float vWaveElev;
+      varying vec2 vLocalUv;
+      uniform mat4 uTextureMatrix;
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+
+      void gerstnerWave(
+        vec2 direction, float wavelength, float amplitude, float steepness, float speedMul,
+        vec3 p, float time,
+        inout vec3 displacement, inout vec3 tangent, inout vec3 binormal, inout float jacobian
+      ) {
+        float k = PI2 / max(wavelength, 0.001);
+        float c = sqrt(9.81 / k) * speedMul;
+        vec2 d = normalize(direction);
+        float f = k * (dot(d, p.xz) - c * time);
+        float a = amplitude;
+        float Q = steepness;
+        float sinF = sin(f);
+        float cosF = cos(f);
+        float Qa = Q * a;
+        displacement.x += Qa * d.x * cosF;
+        displacement.y += a * sinF;
+        displacement.z += Qa * d.y * cosF;
+        float Qak = Q * a * k;
+        tangent += vec3(-d.x * d.x * Qak * sinF, d.x * a * k * cosF, -d.x * d.y * Qak * sinF);
+        binormal += vec3(-d.x * d.y * Qak * sinF, d.y * a * k * cosF, -d.y * d.y * Qak * sinF);
+        jacobian += Qak * cosF;
+      }
+
+      void main() {
+        vLocalUv = uv;
+        vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
+        float scale = max(uWaveScale, 0.2);
+        float h = uWaveHeight;
+        float t = uTime;
+        vec3 displacement = vec3(0.0);
+        vec3 tangent = vec3(1.0, 0.0, 0.0);
+        vec3 binormal = vec3(0.0, 0.0, 1.0);
+        float jacobian = 0.0;
+        gerstnerWave(vec2(1.00, 0.20), 1800.0 * scale, h * 0.42, 0.70, 1.00, world, t, displacement, tangent, binormal, jacobian);
+        gerstnerWave(vec2(0.65, 0.76), 980.0 * scale, h * 0.28, 0.65, 1.07, world, t, displacement, tangent, binormal, jacobian);
+        gerstnerWave(vec2(-0.82, 0.48), 540.0 * scale, h * 0.18, 0.60, 1.15, world, t, displacement, tangent, binormal, jacobian);
+        gerstnerWave(vec2(0.25, -0.97), 260.0 * scale, h * 0.12, 0.55, 1.28, world, t, displacement, tangent, binormal, jacobian);
+        gerstnerWave(vec2(-0.94, -0.25), 130.0 * scale, h * 0.07, 0.50, 1.42, world, t, displacement, tangent, binormal, jacobian);
+        gerstnerWave(vec2(0.48, 0.88), 68.0 * scale, h * 0.045, 0.45, 1.60, world, t, displacement, tangent, binormal, jacobian);
+        gerstnerWave(vec2(-0.38, 0.92), 34.0 * scale, h * 0.028, 0.40, 1.82, world, t, displacement, tangent, binormal, jacobian);
+        gerstnerWave(vec2(0.9, -0.4), 17.0 * scale, h * 0.016, 0.35, 2.10, world, t, displacement, tangent, binormal, jacobian);
+        world += displacement;
+        vec3 normal = normalize(cross(binormal, tangent));
+        vWorldPos = world;
+        vWorldNormal = normal;
+        vWaveElev = displacement.y;
+        vFoam = saturate(max(0.0, jacobian) * 0.85);
+        vMirrorCoord = uTextureMatrix * vec4(world, 1.0);
+        gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+        #include <logdepthbuf_vertex>
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uDeepColor;
+      uniform vec3 uShallowColor;
+      uniform vec3 uFoamColor;
+      uniform float uOpacity;
+      uniform float uFoamStrength;
+      uniform float uSssStrength;
+      uniform float uReflection;
+      uniform float uSpecular;
+      uniform float uRoughness;
+      uniform vec3 uSunDirection;
+      uniform vec3 uSunColor;
+      uniform float uSkyTurbidity;
+      uniform float uSkyRayleigh;
+      uniform sampler2D uMirrorMap;
+      uniform float uHasMirror;
+      uniform float uDistortion;
+      uniform float uAbsorption;
+      uniform float uTime;
+      uniform float uWaveScale;
+      uniform float uWaveHeight;
+      varying vec3 vWorldPos;
+      varying vec3 vWorldNormal;
+      varying vec4 vMirrorCoord;
+      varying float vFoam;
+      varying float vWaveElev;
+      varying vec2 vLocalUv;
+      #include <common>
+      #include <logdepthbuf_pars_fragment>
+
+      float hash12(vec2 p) {
+        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+
+      float noise2(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        float a = hash12(i);
+        float b = hash12(i + vec2(1.0, 0.0));
+        float c = hash12(i + vec2(0.0, 1.0));
+        float d = hash12(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+      }
+
+      float fbm(vec2 p) {
+        float v = 0.0;
+        float a = 0.5;
+        mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+        for (int i = 0; i < 5; i++) {
+          v += a * noise2(p);
+          p = m * p;
+          a *= 0.5;
+        }
+        return v;
+      }
+
+      vec3 detailNormal(vec3 baseN, vec3 worldPos) {
+        float scale = 0.055 / max(uWaveScale, 0.25);
+        vec2 uv = worldPos.xz * scale;
+        float t = uTime * 0.28;
+        float e = 0.45;
+        float h = fbm(uv + vec2(t * 0.13, -t * 0.09));
+        float hx = fbm(uv + vec2(e, 0.0) + vec2(t * 0.13, -t * 0.09)) - h;
+        float hz = fbm(uv + vec2(0.0, e) + vec2(t * 0.13, -t * 0.09)) - h;
+        float chop = 0.7 + fbm(uv * 3.1 - t * 0.2) * 0.45;
+        vec3 n = normalize(vec3(-hx * chop, 1.0, -hz * chop));
+        vec3 tng = normalize(cross(baseN, vec3(0.0, 0.0, 1.0)));
+        if (dot(tng, tng) < 0.001) tng = normalize(cross(baseN, vec3(1.0, 0.0, 0.0)));
+        vec3 btg = cross(baseN, tng);
+        return normalize(tng * n.x + baseN * n.y + btg * n.z);
+      }
+
+      vec3 sampleSky(vec3 R) {
+        vec3 sunDir = normalize(uSunDirection);
+        vec3 rd = normalize(R);
+        float mu = max(dot(rd, sunDir), 0.0);
+        float elev = sunDir.y;
+        float warm = smoothstep(0.28, -0.08, elev);
+        float night = smoothstep(0.05, -0.15, elev);
+        vec3 zenith = mix(mix(vec3(0.08, 0.24, 0.66), vec3(0.12, 0.14, 0.28), warm), vec3(0.01, 0.02, 0.05), night);
+        vec3 horizon = mix(mix(vec3(0.52, 0.70, 0.92), vec3(0.95, 0.42, 0.16), warm), vec3(0.04, 0.05, 0.08), night);
+        vec3 sky = mix(horizon, zenith, pow(clamp(rd.y, 0.0, 1.0), 0.45));
+        sky = mix(vec3(0.18, 0.22, 0.26), sky, smoothstep(-0.12, 0.06, rd.y));
+        sky += uSunColor * pow(mu, mix(220.0, 18.0, warm)) * (1.5 + uSkyTurbidity * 0.05);
+        sky += uSunColor * pow(mu, 5.0) * uSkyRayleigh * 0.1;
+        sky += uSunColor * pow(mu, 1200.0) * 5.0;
+        return sky;
+      }
+
+      float schlickFresnel(float cosTheta) {
+        float f0 = 0.02;
+        return f0 + (1.0 - f0) * pow(1.0 - saturate(cosTheta), 5.0);
+      }
+
+      float ggxSpec(vec3 N, vec3 V, vec3 L, float roughness) {
+        vec3 H = normalize(V + L);
+        float nh = max(dot(N, H), 0.0);
+        float a = max(roughness * roughness, 0.002);
+        float a2 = a * a;
+        float d = (nh * nh) * (a2 - 1.0) + 1.0;
+        return a2 / max(PI * d * d, 1e-4);
+      }
+
+      void main() {
+        #include <logdepthbuf_fragment>
+        vec3 baseN = normalize(vWorldNormal);
+        if (!gl_FrontFacing) baseN = -baseN;
+        vec3 N = normalize(mix(baseN, detailNormal(baseN, vWorldPos), 0.35));
+        vec3 V = normalize(cameraPosition - vWorldPos);
+        vec3 L = normalize(uSunDirection);
+        float ndotv = max(dot(N, V), 0.0);
+        float fresnel = schlickFresnel(ndotv);
+        fresnel = mix(fresnel, 1.0, saturate(uRoughness * 0.2));
+
+        float path = 1.0 / max(ndotv, 0.08);
+        float heightNorm = saturate(vWaveElev / max(uWaveHeight * 0.65, 1.0) * 0.5 + 0.5);
+        vec3 scatterCol = mix(uDeepColor, uShallowColor, heightNorm);
+        vec3 absorb = exp(-mix(vec3(0.35, 0.08, 0.05), vec3(0.12, 0.04, 0.03), heightNorm) * path * uAbsorption * 4.0);
+        vec3 waterBody = scatterCol * absorb;
+
+        float sss = pow(max(dot(V, -L), 0.0), 2.2);
+        sss *= saturate(0.2 + heightNorm);
+        sss *= 0.55 + 0.45 * pow(1.0 - ndotv, 1.5);
+        waterBody += uShallowColor * sss * uSssStrength * 1.6;
+        waterBody += vec3(0.02, 0.22, 0.18) * pow(1.0 - ndotv, 3.0) * uSssStrength * 0.4;
+
+        vec3 reflectN = normalize(mix(vec3(0.0, 1.0, 0.0), baseN, 0.22));
+        reflectN = normalize(mix(reflectN, N, 0.12));
+        vec3 R = reflect(-V, reflectN);
+        vec3 sky = sampleSky(R);
+
+        float dist = length(cameraPosition - vWorldPos);
+        float distortAmt = 0.0025 * uDistortion;
+        distortAmt = min(distortAmt, 0.008);
+        vec2 distort = reflectN.xz * distortAmt;
+        vec3 mirrorCol = sky;
+        if (uHasMirror > 0.5) {
+          vec2 muv = vMirrorCoord.xy / max(vMirrorCoord.w, 1e-4);
+          muv += distort;
+          muv.x = 1.0 - muv.x;
+          float edge = saturate(min(min(muv.x, 1.0 - muv.x), min(muv.y, 1.0 - muv.y)) * 12.0);
+          muv = clamp(muv, 0.001, 0.999);
+          vec3 mirrored = texture2D(uMirrorMap, muv).rgb;
+          mirrorCol = mix(sky, mirrored, edge * 0.95);
+        }
+        mirrorCol = mix(mirrorCol, sky, saturate(dist / 280000.0) * 0.35);
+
+        float rough = clamp(uRoughness, 0.02, 0.6);
+        float spec = ggxSpec(N, V, L, rough) * uSpecular * 0.55;
+        float glint = pow(max(dot(normalize(reflect(-V, N)), L), 0.0), mix(900.0, 40.0, rough)) * uSpecular * 2.2;
+        vec3 specular = uSunColor * (spec + glint) * (0.35 + 0.65 * fresnel);
+
+        float foam = vFoam * uFoamStrength;
+        foam = max(foam, saturate((vWaveElev / max(uWaveHeight, 1.0)) - 0.55) * 0.45 * uFoamStrength);
+        float wind = fbm(vWorldPos.xz * (0.06 / max(uWaveScale, 0.3)) + vec2(uTime * 0.07, -uTime * 0.04));
+        float trails = fbm(vWorldPos.xz * (0.12 / max(uWaveScale, 0.3)) - vec2(uTime * 0.11, uTime * 0.05));
+        foam *= smoothstep(0.2, 0.72, wind * 0.65 + trails * 0.35);
+        foam = saturate(foam);
+        float peakFoam = saturate(foam * 1.4 - 0.25);
+
+        vec3 albedo = mix(waterBody, uFoamColor, foam * 0.85);
+        albedo = mix(albedo, vec3(1.0), peakFoam * 0.35);
+        vec3 color = mix(albedo, mirrorCol, saturate(fresnel * uReflection));
+        color += specular * (1.0 - foam * 0.8);
+        color += uSunColor * max(dot(N, L), 0.0) * 0.06 * (1.0 - foam);
+        color += sky * pow(1.0 - ndotv, 3.0) * 0.08 * uReflection;
+
+        float alpha = mix(uOpacity * 0.78, min(1.0, uOpacity + 0.06), fresnel);
+        alpha = mix(alpha, min(1.0, alpha + 0.22), foam);
+        float edgeDist = max(abs(vLocalUv.x - 0.5), abs(vLocalUv.y - 0.5)) * 2.0;
+        alpha *= 1.0 - smoothstep(0.92, 1.0, edgeDist);
+        gl_FragColor = vec4(color, alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    transparent: true,
+    depthWrite: true,
+    side: THREE.DoubleSide,
+  });
+  return material;
+}
+
+function syncOceanWaterMaterial(material) {
+  if (!material?.uniforms) return;
+  const u = material.uniforms;
+  u.uDeepColor.value.copy(waterState.deepColor);
+  u.uShallowColor.value.copy(waterState.shallowColor);
+  u.uFoamColor.value.copy(waterState.foamColor);
+  u.uOpacity.value = waterState.opacity;
+  u.uWaveHeight.value = Math.max(6, waterState.waveHeight * 72);
+  u.uWaveScale.value = waterState.waveScale;
+  u.uFoamStrength.value = waterState.foamStrength;
+  u.uSssStrength.value = waterState.sssStrength;
+  u.uReflection.value = waterState.reflection;
+  u.uSpecular.value = waterState.specular;
+  u.uRoughness.value = waterState.roughness;
+  if (u.uAbsorption) u.uAbsorption.value = waterState.absorption;
+  if (u.uDistortion) u.uDistortion.value = waterState.distortion;
+  u.uSunDirection.value.copy(skySunDir);
+  u.uSunColor.value.copy(sun.color).multiplyScalar(Math.max(0.75, sun.intensity * 0.55));
+  u.uSkyTurbidity.value = sunParams.turbidity;
+  u.uSkyRayleigh.value = sunParams.rayleigh;
+}
+
+function getWaterHeightY() {
+  return HEIGHT_SCALE * terrainWaterHeightNorm * terrainReliefScale + terrainHeightShift;
+}
+
+function syncWaterHeightToTerrain() {
+  if (!terrainEntry?.waterMesh) return;
+  terrainEntry.waterMesh.position.y = getWaterHeightY();
+}
+
+const _waterLook = new THREE.Vector3();
+const _waterCenter = new THREE.Vector3();
+
+function updateOceanWater(delta) {
+  const waterMesh = terrainEntry?.waterMesh;
+  if (!waterMesh) return;
+  const material = waterMesh.material;
+  if (material?.uniforms?.uTime) material.uniforms.uTime.value += delta;
+  syncOceanWaterMaterial(material);
+
+  const y = getWaterHeightY();
+  const heightAbove = Math.max(1, Math.abs(camera.position.y - y));
+  const orbit = Math.max(50, camera.position.distanceTo(controls.target));
+  const far = Math.max(camera.far, TERRAIN_SIZE);
+  const fovRad = THREE.MathUtils.degToRad(Math.max(20, camera.fov));
+  const horizonFromHeight = heightAbove / Math.max(0.02, Math.tan(fovRad * 0.5));
+  const size = Math.min(
+    TERRAIN_SIZE * 1.45,
+    Math.max(
+      TERRAIN_SIZE * 1.15,
+      far * 1.25,
+      horizonFromHeight * 2.4,
+      orbit * 12 + heightAbove * 18,
+      80000,
+    ),
+  );
+
+  let snapX = 0;
+  let snapZ = 0;
+  if (size < TERRAIN_SIZE * 1.14) {
+    camera.getWorldDirection(_waterLook);
+    _waterCenter.set(camera.position.x, y, camera.position.z);
+    if (Math.abs(_waterLook.y) > 0.002) {
+      const t = (y - camera.position.y) / _waterLook.y;
+      if (t > 0 && t < far * 1.5) {
+        _waterCenter.x = camera.position.x + _waterLook.x * t;
+        _waterCenter.z = camera.position.z + _waterLook.z * t;
+      }
+    }
+    _waterCenter.x = THREE.MathUtils.lerp(camera.position.x, _waterCenter.x, 0.65);
+    _waterCenter.z = THREE.MathUtils.lerp(camera.position.z, _waterCenter.z, 0.65);
+    const cell = size / WATER_SEGMENTS;
+    snapX = Math.round(_waterCenter.x / cell) * cell;
+    snapZ = Math.round(_waterCenter.z / cell) * cell;
+  }
+
+  waterMesh.scale.set(size, size, 1);
+  waterMesh.position.x = snapX;
+  waterMesh.position.z = snapZ;
+  waterMesh.position.y = y;
+  waterMesh.frustumCulled = false;
+  waterMesh.updateMatrixWorld(true);
+
+  if (!waterMesh.userData._reflectBound) {
+    waterMesh.userData._reflectBound = true;
+    waterMesh.onBeforeRender = (renderer, scene, cam) => {
+      if (waterMesh.userData._reflecting) return;
+      waterMesh.userData._reflecting = true;
+      try {
+        renderWaterReflection(waterMesh, renderer, scene, cam);
+      } finally {
+        waterMesh.userData._reflecting = false;
+      }
+    };
+  }
+}
+
+function getTerrainProcNoise() {
+  if (!terrainProcNoise) terrainProcNoise = new PerlinNoise(terrainNoiseSeed);
+  return terrainProcNoise;
+}
+
+function tectonicHeightMod(x, z) {
+  if (terrainCrustFactor === 0 && terrainTectonicFactor === 0) return 0;
+  const pn = getTerrainProcNoise();
+  const crustScale = terrainHillParams.spacing * 6;
+  const crust = pn.fbm(x / crustScale, z / crustScale, 3, 2.5, 0.5);
+  const tectonic = 0.2 / (Math.abs(crust) + 0.1) - 0.95;
+  return (crust * terrainCrustFactor + tectonic * terrainTectonicFactor) * HEIGHT_SCALE * 0.08;
+}
+
+function noiseHeight(x, z) {
+  const pn = getTerrainProcNoise();
+  let h;
+  if (terrainMountainBorderMode) {
+    const half = TERRAIN_SIZE / 2;
+    const dist = Math.sqrt(x * x + z * z) / half;
+    const mbRadiusNorm = terrainMbRadius / 100;
+    const mbWidthNorm = terrainMbWidth / 100;
+    const irreg = terrainMbIrregularity * 0.01;
+    const noiseOff = irreg > 0
+      ? pn.fbm(x * 0.005, z * 0.005, terrainNoiseOctaves, terrainNoiseLacunarity, terrainNoisePersistence) * irreg
+      : 0;
+    const ringDist = (dist + noiseOff - mbRadiusNorm) / mbWidthNorm;
+    const ringWeight = Math.exp(-ringDist * ringDist);
+    const mtnNoise = pn.fbm(x * 0.012, z * 0.012, terrainNoiseOctaves, terrainNoiseLacunarity, terrainNoisePersistence);
+    const detail = terrainHillParams.detail !== 0 ? pn.noise(x * 0.03, z * 0.03) * 10 * terrainHillParams.detail : 0;
+    const dune = terrainHillParams.dunes !== 0 ? pn.noise(x * 0.006, z * 0.006) * 20 * terrainHillParams.dunes : 0;
+    h = (ringWeight * (0.5 + mtnNoise * 0.5) * (terrainMbHeight / 100) * HEIGHT_SCALE * 0.4 + detail + dune)
+      * terrainHillParams.height * terrainHillParams.rolling;
+  } else {
+    const baseScale = terrainHillParams.spacing * 3 * (TERRAIN_SIZE / 1000);
+    const sx = baseScale / Math.max(0.01, terrainHillParams.freqX);
+    const sz = baseScale / Math.max(0.01, terrainHillParams.freqZ);
+    let nx = x / sx;
+    let nz = z / sz;
+    if (terrainWarpStrength > 0) {
+      const w = terrainWarpStrength / baseScale;
+      nx += pn.fbm(x * 0.005 + 100, z * 0.005, 2, 2, 0.5) * w;
+      nz += pn.fbm(x * 0.005 + 200, z * 0.005 + 100, 2, 2, 0.5) * w;
+    }
+    const n = pn.fbm(nx, nz, terrainNoiseOctaves, terrainNoiseLacunarity, terrainNoisePersistence);
+    const detailNoise = terrainHillParams.detail !== 0 ? pn.noise(x * 0.02, z * 0.02) * 0.2 * terrainHillParams.detail : 0;
+    const duneNoise = terrainHillParams.dunes !== 0 ? pn.noise(x * 0.004, z * 0.004) * 0.4 * terrainHillParams.dunes : 0;
+    h = (n + detailNoise + duneNoise) * terrainHillParams.height * HEIGHT_SCALE * terrainHillParams.rolling;
+  }
+  if (terrainHillParams.displacement && terrainHillParams.height > 0) {
+    h += pn.noise(x * 0.08, z * 0.08) * terrainHillParams.displacement * HEIGHT_SCALE * 0.05;
+  }
+  return h + tectonicHeightMod(x, z);
+}
+
+function writeTerrainHeightNormAttr(heights) {
+  let minH = Infinity;
+  let maxH = -Infinity;
+  for (let i = 0; i < heights.length; i++) {
+    if (heights[i] < minH) minH = heights[i];
+    if (heights[i] > maxH) maxH = heights[i];
+  }
+  const range = maxH - minH || 1;
+  const attr = terrainMesh.geometry.attributes.heightNorm;
+  for (let i = 0; i < heights.length; i++) {
+    attr.array[i] = (heights[i] - minH) / range;
+  }
+  attr.needsUpdate = true;
+}
+
+function scheduleForestRestick() {
+  if (forestRestickThrottleId) clearTimeout(forestRestickThrottleId);
+  forestRestickThrottleId = setTimeout(() => {
+    forestRestickThrottleId = 0;
+    restickForestToTerrain();
+  }, 350);
+}
+
+function flushForestRestick() {
+  if (forestRestickThrottleId) {
+    clearTimeout(forestRestickThrottleId);
+    forestRestickThrottleId = 0;
+  }
+  restickForestToTerrain();
+}
+
+function restickForestToTerrain() {
+  if (!terrainForestSystem || !terrainEntry) return;
+  for (const trees of terrainForestSystem.chunkBins.values()) {
+    for (let i = 0; i < trees.length; i += 6) {
+      const sample = sampleTerrainSurface(terrainEntry, trees[i], trees[i + 2]);
+      if (sample) trees[i + 1] = sample.y;
+    }
+  }
+  if (terrainForestSystem.spawnTree) {
+    const s = sampleTerrainSurface(
+      terrainEntry,
+      terrainForestSystem.spawnTree.x,
+      terrainForestSystem.spawnTree.z,
+    );
+    if (s) terrainForestSystem.spawnTree.y = s.y;
+  }
+  for (const chunk of terrainForestSystem.builtChunks.values()) {
+    const trees = chunk.trees;
+    const group = chunk.group;
+    const parent = group.parent;
+    disposeTerrainForestChunkGroup(group);
+    group.removeFromParent();
+    const next = buildTerrainForestChunkGroup(trees, terrainForestSystem.templates);
+    prepareMeshes(next);
+    chunk.group = next;
+    if (parent) parent.add(next);
+  }
+  terrainForestSystem.instancedMeshes = [];
+  for (const chunk of terrainForestSystem.builtChunks.values()) {
+    terrainForestSystem.instancedMeshes.push(...chunk.group.userData.instancedMeshes);
+  }
+}
+
+function updateTerrainTextureScale(scale = terrainTextureScale) {
+  terrainTextureScale = scale;
+  if (!terrainTextureSetsPromise) return;
+  terrainTextureSetsPromise.then((sets) => {
+    const repeat = scale * (TERRAIN_SIZE / TERRAIN_TEXTURE_REFERENCE_SIZE);
+    for (const key of ['sand', 'grass', 'stone', 'snow']) {
+      const set = sets[key];
+      if (!set) continue;
+      set.color.repeat.set(repeat, repeat);
+      set.normal.repeat.set(repeat, repeat);
+      set.roughness.repeat.set(repeat, repeat);
+      set.ao.repeat.set(repeat, repeat);
+    }
+  });
+}
+
+function updateTerrainFromProcedural() {
+  if (!terrainEntry?.mesh?.geometry || !terrainEntry._normalizedHeights || !terrainEntry._basePositions) return;
+  const mesh = terrainEntry.mesh;
+  const pos = mesh.geometry.attributes.position;
+  const nh = terrainEntry._normalizedHeights;
+  const bp = terrainEntry._basePositions;
+  const scale = terrainReliefScale * HEIGHT_SCALE;
+  const heights = new Float32Array(pos.count);
+  let minH = Infinity;
+  let maxH = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const h = nh[i] * scale + noiseHeight(bp[i * 2], bp[i * 2 + 1]);
+    heights[i] = h;
+    if (h < minH) minH = h;
+    if (h > maxH) maxH = h;
+  }
+  const range = maxH - minH || 1;
+  if (terrainHeightRedistribution !== 1) {
+    for (let i = 0; i < pos.count; i++) {
+      const t = (heights[i] - minH) / range;
+      heights[i] = minH + Math.pow(t, terrainHeightRedistribution) * range;
+    }
+  }
+  if (terrainWaterBorder > 0) {
+    const half = TERRAIN_SIZE / 2;
+    const borderFrac = terrainWaterBorder / 100;
+    const cornerR = Math.min(borderFrac * 0.6, 0.45);
+    let borderMinH = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      if (heights[i] < borderMinH) borderMinH = heights[i];
+    }
+    for (let i = 0; i < pos.count; i++) {
+      const dx = Math.abs(bp[i * 2]) / half;
+      const dz = Math.abs(bp[i * 2 + 1]) / half;
+      const flatDist = Math.min(Math.max(dx, dz), 1 - cornerR);
+      const qx = Math.max(dx - (1 - cornerR), 0);
+      const qz = Math.max(dz - (1 - cornerR), 0);
+      const edgeDist = (flatDist + Math.hypot(qx, qz)) / (1 - cornerR + cornerR * Math.SQRT2);
+      const t = Math.max(0, (edgeDist - (1 - borderFrac)) / borderFrac);
+      heights[i] = heights[i] * (1 - t) + borderMinH * t;
+    }
+  }
+  writeTerrainHeightNormAttr(heights);
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, heights[i]);
+  }
+  pos.needsUpdate = true;
+  mesh.position.y = 0;
+  mesh.geometry.computeVertexNormals();
+  mesh.geometry.computeBoundingBox();
+  mesh.geometry.computeBoundingSphere();
+  if (mesh.geometry.boundsTree) mesh.geometry.disposeBoundsTree();
+  mesh.geometry.computeBoundsTree();
+  terrainHeightShift = 0;
+  appliedTerrainReliefScale = terrainReliefScale;
+  appliedTerrainHeightShift = 0;
+  syncWaterHeightToTerrain();
+  scheduleForestRestick();
+  if (character && !mapEditorOpen) snapToGround();
+}
+
+function scheduleTerrainProceduralUpdate() {
+  if (terrainProcUpdatePending) return;
+  terrainProcUpdatePending = true;
+  requestAnimationFrame(() => {
+    terrainProcUpdatePending = false;
+    updateTerrainFromProcedural();
+  });
+}
+
+function applyTerrainVerticalEdit(newScale, newShift) {
+  terrainReliefScale = newScale;
+  terrainHeightShift = 0;
+  updateTerrainFromProcedural();
+}
+
+function scheduleTerrainVerticalEdit(newScale) {
+  terrainReliefScale = newScale;
+  terrainHeightShift = 0;
+  if (terrainVerticalThrottleId) return;
+  terrainVerticalThrottleId = setTimeout(() => {
+    terrainVerticalThrottleId = 0;
+    scheduleTerrainProceduralUpdate();
+  }, 80);
+}
+
+function syncVolCloudUniforms() {
+  if (!volCloudMat) return;
+  const u = volCloudMat.uniforms;
+  u.uSunIntensity.value = VOL_CLOUDS.sunIntensity;
+  u.uAmbientScale.value = VOL_CLOUDS.ambientScale;
+  u.uCloudBaseY.value = VOL_CLOUDS.baseY;
+  u.uCloudHeight.value = VOL_CLOUDS.height;
+  u.uCoverage.value = VOL_CLOUDS.coverage;
+  u.uDensityScale.value = VOL_CLOUDS.densityScale;
+  u.uAbsorp.value = VOL_CLOUDS.absorp;
+}
+
+function frameCameraTerrainCenter() {
+  const targetObj = terrainMesh || terrainGroup;
+  const center = new THREE.Vector3();
+  if (targetObj) {
+    const box = new THREE.Box3().setFromObject(targetObj);
+    box.getCenter(center);
+  } else {
+    center.set(0, HEIGHT_SCALE * 0.5 * terrainReliefScale, 0);
+  }
+  controls.target.copy(center);
+  const dist = Math.max(TERRAIN_SIZE * 0.2, HEIGHT_SCALE * Math.max(terrainReliefScale, 0.5) * 1.2);
+  camera.position.set(center.x, center.y + dist * 0.45, center.z + dist * 0.85);
+  controls.enablePan = false;
+  controls.enableRotate = true;
+  controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
+  controls.minDistance = 1;
+  controls.maxDistance = TERRAIN_SIZE * 0.6;
+  controls.minPolarAngle = 0;
+  controls.maxPolarAngle = Math.PI * 0.49;
+  camera.near = Math.max(1, dist * 0.0001);
+  camera.updateProjectionMatrix();
+  syncSkyToCamera();
+}
+
+function setMapEditorOpen(open) {
+  if (!character || mapEditorOpen === open) return;
+  if (open && mapView) setMapView(false);
+  mapEditorOpen = open;
+  keys.KeyW = keys.KeyA = keys.KeyS = keys.KeyD = false;
+  const panel = document.getElementById('map-editor');
+  const skillBar = document.getElementById('skill-bar');
+  if (panel) panel.classList.toggle('hidden', !open);
+  if (skillBar) skillBar.classList.toggle('hidden', open);
+  character.group.visible = !open;
+  if (open) {
+    frameCameraTerrainCenter();
+  } else {
+    if (terrainVerticalThrottleId) {
+      clearTimeout(terrainVerticalThrottleId);
+      terrainVerticalThrottleId = 0;
+      updateTerrainFromProcedural();
+    }
+    flushForestRestick();
+    frameCameraChar();
+    snapToGround();
+  }
+}
+
+function createEditorToggle(parent, label, checked, onChange) {
+  const row = document.createElement('div');
+  row.className = 'toggle-row';
+  const lab = document.createElement('label');
+  lab.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = checked;
+  input.addEventListener('change', () => onChange(input.checked));
+  row.append(lab, input);
+  parent.appendChild(row);
+  return input;
+}
+
+function createEditorSlider(parent, label, min, max, step, value, format, onInput) {
+  const row = document.createElement('div');
+  row.className = 'slider-row';
+  const lab = document.createElement('label');
+  const name = document.createElement('span');
+  name.textContent = label;
+  const out = document.createElement('output');
+  out.textContent = format(value);
+  lab.append(name, out);
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+  input.addEventListener('input', () => {
+    const v = Number(input.value);
+    out.textContent = format(v);
+    onInput(v);
+  });
+  row.append(lab, input);
+  parent.appendChild(row);
+  return input;
+}
+
+function createEditorSection(parent, title) {
+  const el = document.createElement('div');
+  el.className = 'section-title';
+  el.textContent = title;
+  parent.appendChild(el);
+  return el;
+}
+
+function buildMapEditorPanel() {
+  const body = document.getElementById('map-editor-body');
+  if (!body || body.dataset.ready === '1') return;
+  body.dataset.ready = '1';
+
+  createEditorSection(body, 'Cloud System 1');
+  createEditorToggle(body, 'Enable Sky Clouds', cloudSystem1Enabled, (v) => {
+    cloudSystem1Enabled = v;
+    applySkyUniforms();
+  });
+  createEditorSlider(body, 'Cloud Coverage', 0, 1, 0.01, sunParams.cloudCoverage, (v) => v.toFixed(2), (v) => {
+    sunParams.cloudCoverage = v;
+    applySkyUniforms();
+  });
+  createEditorSlider(body, 'Cloud Density', 0, 1, 0.01, sunParams.cloudDensity, (v) => v.toFixed(2), (v) => {
+    sunParams.cloudDensity = v;
+    applySkyUniforms();
+  });
+  createEditorSlider(body, 'Cloud Elevation', 0, 1, 0.01, sunParams.cloudElevation, (v) => v.toFixed(2), (v) => {
+    sunParams.cloudElevation = v;
+    applySkyUniforms();
+  });
+  createEditorSlider(body, 'Cloud Scale', 0.00005, 0.001, 0.00001, sunParams.cloudScale, (v) => v.toFixed(5), (v) => {
+    sunParams.cloudScale = v;
+    applySkyUniforms();
+  });
+  createEditorSlider(body, 'Cloud Speed', 0, 0.002, 0.00001, sunParams.cloudSpeed, (v) => v.toFixed(5), (v) => {
+    sunParams.cloudSpeed = v;
+    applySkyUniforms();
+  });
+
+  createEditorSection(body, 'Cloud System 2');
+  createEditorToggle(body, 'Enable Volumetric Clouds', volCloudsEnabled, (v) => {
+    volCloudsEnabled = v;
+  });
+  createEditorSlider(body, 'Coverage', 0, 1, 0.01, VOL_CLOUDS.coverage, (v) => v.toFixed(2), (v) => {
+    VOL_CLOUDS.coverage = v;
+    syncVolCloudUniforms();
+  });
+  createEditorSlider(body, 'Density', 0, 3, 0.01, VOL_CLOUDS.densityScale, (v) => v.toFixed(2), (v) => {
+    VOL_CLOUDS.densityScale = v;
+    syncVolCloudUniforms();
+  });
+  createEditorSlider(body, 'Absorption', 0, 40, 0.1, VOL_CLOUDS.absorp, (v) => v.toFixed(1), (v) => {
+    VOL_CLOUDS.absorp = v;
+    syncVolCloudUniforms();
+  });
+  createEditorSlider(body, 'Elevation', 0, HEIGHT_SCALE * 1.5, 50, VOL_CLOUDS.baseY, (v) => Math.round(v).toString(), (v) => {
+    VOL_CLOUDS.baseY = v;
+    syncVolCloudUniforms();
+  });
+  createEditorSlider(body, 'Slab Height', 100, HEIGHT_SCALE, 50, VOL_CLOUDS.height, (v) => Math.round(v).toString(), (v) => {
+    VOL_CLOUDS.height = v;
+    syncVolCloudUniforms();
+  });
+  createEditorSlider(body, 'Wind X', -0.005, 0.005, 0.0001, VOL_CLOUDS.wind.x, (v) => v.toFixed(4), (v) => {
+    VOL_CLOUDS.wind.x = v;
+  });
+  createEditorSlider(body, 'Wind Y', -0.005, 0.005, 0.0001, VOL_CLOUDS.wind.y, (v) => v.toFixed(4), (v) => {
+    VOL_CLOUDS.wind.y = v;
+  });
+  createEditorSlider(body, 'Wind Z', -0.005, 0.005, 0.0001, VOL_CLOUDS.wind.z, (v) => v.toFixed(4), (v) => {
+    VOL_CLOUDS.wind.z = v;
+  });
+  createEditorSlider(body, 'Sun Intensity', 0, 30, 0.1, VOL_CLOUDS.sunIntensity, (v) => v.toFixed(1), (v) => {
+    VOL_CLOUDS.sunIntensity = v;
+    syncVolCloudUniforms();
+  });
+  createEditorSlider(body, 'Ambient Scale', 0, 10, 0.1, VOL_CLOUDS.ambientScale, (v) => v.toFixed(1), (v) => {
+    VOL_CLOUDS.ambientScale = v;
+    syncVolCloudUniforms();
+  });
+
+  createEditorSection(body, 'Sun / Sky');
+  createEditorSlider(body, 'Elevation', 0, 90, 0.5, sunParams.elevation, (v) => `${v}°`, (v) => {
+    sunParams.elevation = v;
+    scheduleUpdateSun();
+  });
+  createEditorSlider(body, 'Azimuth', -180, 180, 1, sunParams.azimuth, (v) => `${v}°`, (v) => {
+    sunParams.azimuth = v;
+    scheduleUpdateSun();
+  });
+  createEditorSlider(body, 'Exposure', 0, 1, 0.01, sunParams.exposure, (v) => v.toFixed(2), (v) => {
+    sunParams.exposure = v;
+    applySkyUniforms();
+  });
+  createEditorSlider(body, 'Turbidity', 0, 20, 0.1, sunParams.turbidity, (v) => v.toFixed(1), (v) => {
+    sunParams.turbidity = v;
+    applySkyUniforms();
+  });
+  createEditorSlider(body, 'Rayleigh', 0, 4, 0.1, sunParams.rayleigh, (v) => v.toFixed(1), (v) => {
+    sunParams.rayleigh = v;
+    applySkyUniforms();
+  });
+  createEditorSlider(body, 'Anim Speed', 0, 6, 0.05, SKY_ANIM_SPEED, (v) => v.toFixed(2), (v) => {
+    SKY_ANIM_SPEED = v;
+  });
+
+  createEditorSection(body, 'Lights');
+  createEditorSlider(body, 'Ambient', 0, 2, 0.01, ambient.intensity, (v) => v.toFixed(2), (v) => {
+    ambient.intensity = v;
+  });
+  createEditorSlider(body, 'Sun Light', 0, 5, 0.05, sun.intensity, (v) => v.toFixed(2), (v) => {
+    sun.intensity = v;
+  });
+  createEditorSlider(body, 'Fill Light', 0, 2, 0.01, fill.intensity, (v) => v.toFixed(2), (v) => {
+    fill.intensity = v;
+  });
+
+  createEditorSection(body, 'Water');
+  createEditorSlider(body, 'Water Level', 0, 1, 0.01, terrainWaterHeightNorm, (v) => v.toFixed(2), (v) => {
+    terrainWaterHeightNorm = v;
+    syncWaterHeightToTerrain();
+  });
+  createEditorSlider(body, 'Opacity', 0, 1, 0.01, waterState.opacity, (v) => v.toFixed(2), (v) => {
+    waterState.opacity = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Wave Height', 0, 5, 0.01, waterState.waveHeight, (v) => v.toFixed(2), (v) => {
+    waterState.waveHeight = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Wave Scale', 0.2, 4, 0.01, waterState.waveScale, (v) => v.toFixed(2), (v) => {
+    waterState.waveScale = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Foam', 0, 3, 0.01, waterState.foamStrength, (v) => v.toFixed(2), (v) => {
+    waterState.foamStrength = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Subsurface', 0, 3, 0.01, waterState.sssStrength, (v) => v.toFixed(2), (v) => {
+    waterState.sssStrength = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Reflection', 0, 2, 0.01, waterState.reflection, (v) => v.toFixed(2), (v) => {
+    waterState.reflection = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Specular', 0, 4, 0.01, waterState.specular, (v) => v.toFixed(2), (v) => {
+    waterState.specular = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Roughness', 0, 1, 0.01, waterState.roughness, (v) => v.toFixed(2), (v) => {
+    waterState.roughness = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Absorption', 0, 2, 0.01, waterState.absorption, (v) => v.toFixed(2), (v) => {
+    waterState.absorption = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Distortion', 0, 3, 0.01, waterState.distortion, (v) => v.toFixed(2), (v) => {
+    waterState.distortion = v;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Deep R', 0, 255, 1, Math.round(waterState.deepColor.r * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.deepColor.r = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Deep G', 0, 255, 1, Math.round(waterState.deepColor.g * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.deepColor.g = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Deep B', 0, 255, 1, Math.round(waterState.deepColor.b * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.deepColor.b = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Shallow R', 0, 255, 1, Math.round(waterState.shallowColor.r * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.shallowColor.r = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Shallow G', 0, 255, 1, Math.round(waterState.shallowColor.g * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.shallowColor.g = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Shallow B', 0, 255, 1, Math.round(waterState.shallowColor.b * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.shallowColor.b = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Foam R', 0, 255, 1, Math.round(waterState.foamColor.r * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.foamColor.r = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Foam G', 0, 255, 1, Math.round(waterState.foamColor.g * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.foamColor.g = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+  createEditorSlider(body, 'Foam B', 0, 255, 1, Math.round(waterState.foamColor.b * 255), (v) => String(Math.round(v)), (v) => {
+    waterState.foamColor.b = v / 255;
+    syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  });
+
+  createEditorSection(body, 'Terrain');
+  createEditorSlider(body, 'Relief Scale', 0.1, 3, 0.01, terrainReliefScale, (v) => v.toFixed(2), (v) => {
+    scheduleTerrainVerticalEdit(v);
+  });
+  createEditorSlider(body, 'Texture Scale', 8, 256, 1, terrainTextureScale, (v) => String(Math.round(v)), (v) => {
+    updateTerrainTextureScale(v);
+  });
+  createEditorSlider(body, 'Height Redistribution', 0.3, 3, 0.05, terrainHeightRedistribution, (v) => v.toFixed(2), (v) => {
+    terrainHeightRedistribution = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Roughness', 0, 1, 0.01, terrainMesh?.material?.roughness ?? 0.85, (v) => v.toFixed(2), (v) => {
+    if (terrainMesh?.material) terrainMesh.material.roughness = v;
+  });
+  createEditorSlider(body, 'Metalness', 0, 1, 0.01, terrainMesh?.material?.metalness ?? 0.05, (v) => v.toFixed(2), (v) => {
+    if (terrainMesh?.material) terrainMesh.material.metalness = v;
+  });
+
+  createEditorSection(body, 'Procedural Noise');
+  createEditorSlider(body, 'Octaves', 1, 8, 1, terrainNoiseOctaves, (v) => String(Math.round(v)), (v) => {
+    terrainNoiseOctaves = Math.round(v);
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Lacunarity', 1, 4, 0.1, terrainNoiseLacunarity, (v) => v.toFixed(1), (v) => {
+    terrainNoiseLacunarity = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Persistence', 0.1, 0.9, 0.01, terrainNoisePersistence, (v) => v.toFixed(2), (v) => {
+    terrainNoisePersistence = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Seed', 0, 9999, 1, terrainNoiseSeed, (v) => String(Math.round(v)), (v) => {
+    terrainNoiseSeed = Math.round(v);
+    getTerrainProcNoise().setSeed(terrainNoiseSeed);
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Noise Height', 0, 2, 0.01, terrainHillParams.height, (v) => `${Math.round(v * 100)}%`, (v) => {
+    terrainHillParams.height = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Hill Spacing', 10, 500, 5, terrainHillParams.spacing, (v) => String(Math.round(v)), (v) => {
+    terrainHillParams.spacing = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Rolling Hills', 0, 2, 0.01, terrainHillParams.rolling, (v) => `${Math.round(v * 100)}%`, (v) => {
+    terrainHillParams.rolling = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Large Dunes', 0, 2, 0.01, terrainHillParams.dunes, (v) => `${Math.round(v * 100)}%`, (v) => {
+    terrainHillParams.dunes = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Fine Detail', 0, 2, 0.01, terrainHillParams.detail, (v) => `${Math.round(v * 100)}%`, (v) => {
+    terrainHillParams.detail = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Micro Displacement', 0, 5, 0.05, terrainHillParams.displacement, (v) => v.toFixed(2), (v) => {
+    terrainHillParams.displacement = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'X-Step', 0.1, 5, 0.05, terrainHillParams.freqX, (v) => v.toFixed(2), (v) => {
+    terrainHillParams.freqX = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Z-Step', 0.1, 5, 0.05, terrainHillParams.freqZ, (v) => v.toFixed(2), (v) => {
+    terrainHillParams.freqZ = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Domain Warp', 0, 100, 1, terrainWarpStrength, (v) => String(Math.round(v)), (v) => {
+    terrainWarpStrength = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Crust Factor', 0, 20, 0.5, terrainCrustFactor, (v) => v.toFixed(1), (v) => {
+    terrainCrustFactor = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Tectonic Factor', 0, 6, 0.1, terrainTectonicFactor, (v) => v.toFixed(1), (v) => {
+    terrainTectonicFactor = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorToggle(body, 'Mountain Border', terrainMountainBorderMode, (v) => {
+    terrainMountainBorderMode = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'MB Radius', 10, 90, 1, terrainMbRadius, (v) => String(Math.round(v)), (v) => {
+    terrainMbRadius = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'MB Width', 5, 40, 1, terrainMbWidth, (v) => String(Math.round(v)), (v) => {
+    terrainMbWidth = v;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'MB Height', 0, 3, 0.01, terrainMbHeight / 100, (v) => v.toFixed(2), (v) => {
+    terrainMbHeight = v * 100;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'MB Irregularity', 0, 1, 0.01, terrainMbIrregularity / 100, (v) => v.toFixed(2), (v) => {
+    terrainMbIrregularity = v * 100;
+    scheduleTerrainProceduralUpdate();
+  });
+  createEditorSlider(body, 'Water Border', 0, 100, 1, terrainWaterBorder, (v) => String(Math.round(v)), (v) => {
+    terrainWaterBorder = v;
+    scheduleTerrainProceduralUpdate();
+  });
+}
+
+function rebuildMapEditorPanel() {
+  const body = document.getElementById('map-editor-body');
+  if (!body) return;
+  body.innerHTML = '';
+  delete body.dataset.ready;
+  buildMapEditorPanel();
+}
+
+function resetMapEditorDefaults() {
+  if (terrainVerticalThrottleId) {
+    clearTimeout(terrainVerticalThrottleId);
+    terrainVerticalThrottleId = 0;
+  }
+  Object.assign(sunParams, {
+    elevation: 32, azimuth: 180, exposure: 0.25, turbidity: 10, rayleigh: 1,
+    cloudCoverage: 0.55, cloudDensity: 0.85, cloudElevation: 0.5,
+    cloudScale: 0.0002, cloudSpeed: 0.00045,
+  });
+  cloudSystem1Enabled = true;
+  volCloudsEnabled = true;
+  SKY_ANIM_SPEED = 3;
+  ambient.intensity = 0.55;
+  sun.intensity = 1.8;
+  fill.intensity = 0.35;
+  VOL_CLOUDS.coverage = 1.0;
+  VOL_CLOUDS.densityScale = 1.0;
+  VOL_CLOUDS.absorp = 14.0;
+  VOL_CLOUDS.baseY = HEIGHT_SCALE * 0.48;
+  VOL_CLOUDS.height = HEIGHT_SCALE * 0.18;
+  VOL_CLOUDS.wind.x = 0.0008;
+  VOL_CLOUDS.wind.y = -0.0004;
+  VOL_CLOUDS.wind.z = 0.0005;
+  VOL_CLOUDS.sunIntensity = 10.0;
+  VOL_CLOUDS.ambientScale = 3.0;
+  terrainWaterHeightNorm = TERRAIN_WATER_HEIGHT_NORM;
+  terrainReliefScale = 1;
+  terrainHeightShift = 0;
+  terrainTextureScale = 48;
+  terrainHeightRedistribution = 1;
+  terrainNoiseOctaves = 4;
+  terrainNoiseLacunarity = 2;
+  terrainNoisePersistence = 0.5;
+  terrainNoiseSeed = 0;
+  terrainHillParams.height = 0;
+  terrainHillParams.spacing = 100;
+  terrainHillParams.rolling = 1;
+  terrainHillParams.dunes = 1;
+  terrainHillParams.detail = 1;
+  terrainHillParams.displacement = 0.5;
+  terrainHillParams.freqX = 1;
+  terrainHillParams.freqZ = 1;
+  terrainWarpStrength = 0;
+  terrainCrustFactor = 0;
+  terrainTectonicFactor = 0;
+  terrainMountainBorderMode = false;
+  terrainMbRadius = 40;
+  terrainMbWidth = 15;
+  terrainMbHeight = 100;
+  terrainMbIrregularity = 30;
+  terrainWaterBorder = 0;
+  getTerrainProcNoise().setSeed(terrainNoiseSeed);
+  waterState.opacity = WATER_DEFAULTS.opacity;
+  waterState.waveHeight = WATER_DEFAULTS.waveHeight;
+  waterState.waveScale = WATER_DEFAULTS.waveScale;
+  waterState.foamStrength = WATER_DEFAULTS.foamStrength;
+  waterState.sssStrength = WATER_DEFAULTS.sssStrength;
+  waterState.reflection = WATER_DEFAULTS.reflection;
+  waterState.specular = WATER_DEFAULTS.specular;
+  waterState.roughness = WATER_DEFAULTS.roughness;
+  waterState.absorption = WATER_DEFAULTS.absorption;
+  waterState.distortion = WATER_DEFAULTS.distortion;
+  waterState.deepColor.setHex(WATER_DEFAULTS.deepColor);
+  waterState.shallowColor.setHex(WATER_DEFAULTS.shallowColor);
+  waterState.foamColor.setHex(WATER_DEFAULTS.foamColor);
+  syncOceanWaterMaterial(terrainEntry?.waterMesh?.material);
+  if (terrainMesh?.material) {
+    terrainMesh.material.roughness = 0.85;
+    terrainMesh.material.metalness = 0.05;
+  }
+  updateTerrainTextureScale(48);
+  updateTerrainFromProcedural();
+  flushForestRestick();
+  syncWaterHeightToTerrain();
+  syncVolCloudUniforms();
+  updateSun();
+  rebuildMapEditorPanel();
+  if (mapEditorOpen) frameCameraTerrainCenter();
+}
+
+document.getElementById('map-editor-reset')?.addEventListener('click', () => {
+  resetMapEditorDefaults();
+});
+
 window.addEventListener('keydown', (e) => {
   if (!character) return;
+  if (e.code === 'Escape' && !e.repeat) {
+    if (mapView) {
+      setMapView(false);
+      return;
+    }
+    if (!mapEditorOpen) buildMapEditorPanel();
+    setMapEditorOpen(!mapEditorOpen);
+    return;
+  }
+  if (mapEditorOpen) return;
   if (e.code === 'KeyM' && !e.repeat) { setMapView(!mapView); return; }
-  if (e.code === 'Escape' && mapView) { setMapView(false); return; }
   if (mapView) return;
   if (e.code in keys) { keys[e.code] = true; return; }
   if (e.repeat) return;
   if (e.code === 'Space') { e.preventDefault(); triggerJump(); }
+  else if (e.code === 'Digit1') { e.preventDefault(); triggerTeleport(); }
   else if (e.code === 'ControlLeft' || e.code === 'ControlRight') { e.preventDefault(); triggerRoll(); }
 });
 
@@ -1488,6 +4231,7 @@ window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  resizeVolCloudTargets();
 });
 
 // ---------- Terrain textures ----------
@@ -1746,6 +4490,8 @@ async function loadTerrain() {
   const srcH = heightPixels.height;
 
   const segments = Math.min(sampleSize - 1, 511);
+  const cols = segments + 1;
+  const rows = cols;
   const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, segments, segments);
   geometry.rotateX(-Math.PI / 2);
 
@@ -1760,27 +4506,80 @@ async function loadTerrain() {
     if (maxDiff <= 2) return r / 255;
     return (r * 65536 + g * 256 + b) / 16777215;
   };
+  const sampleHeightBilinear = (u, v) => {
+    // u,v in 0..1 (Three UV); image row 0 is top → flip v.
+    const x = THREE.MathUtils.clamp(u, 0, 1) * (srcW - 1);
+    const y = THREE.MathUtils.clamp(1 - v, 0, 1) * (srcH - 1);
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = Math.min(x0 + 1, srcW - 1);
+    const y1 = Math.min(y0 + 1, srcH - 1);
+    const tx = x - x0;
+    const ty = y - y0;
+    const at = (ix, iy) => {
+      const idx = (iy * srcW + ix) * 4;
+      return decodeHeight(data[idx], data[idx + 1], data[idx + 2]);
+    };
+    return THREE.MathUtils.lerp(
+      THREE.MathUtils.lerp(at(x0, y0), at(x1, y0), tx),
+      THREE.MathUtils.lerp(at(x0, y1), at(x1, y1), tx),
+      ty,
+    );
+  };
   for (let i = 0; i < pos.count; i++) {
-    const px = Math.min(Math.floor(uv.getX(i) * srcW), srcW - 1);
-    const py = Math.min(Math.floor((1 - uv.getY(i)) * srcH), srcH - 1);
-    const idx = (py * srcW + px) * 4;
-    const h = decodeHeight(data[idx], data[idx + 1], data[idx + 2]);
+    const h = sampleHeightBilinear(uv.getX(i), uv.getY(i));
     heights[i] = h;
     if (h < minH) minH = h;
     if (h > maxH) maxH = h;
   }
+
+  // Laplacian smooth on the vertex grid to soften DEM stair-steps / noise.
+  if (TERRAIN_HEIGHT_SMOOTH_PASSES > 0) {
+    let cur = heights;
+    let next = new Float32Array(heights.length);
+    for (let pass = 0; pass < TERRAIN_HEIGHT_SMOOTH_PASSES; pass++) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const i = r * cols + c;
+          if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) {
+            next[i] = cur[i];
+            continue;
+          }
+          next[i] = (
+            cur[i] * 4
+            + cur[i - 1] + cur[i + 1]
+            + cur[i - cols] + cur[i + cols]
+          ) / 8;
+        }
+      }
+      const swap = cur;
+      cur = next;
+      next = swap;
+    }
+    if (cur !== heights) heights.set(cur);
+    minH = Infinity;
+    maxH = -Infinity;
+    for (let i = 0; i < heights.length; i++) {
+      if (heights[i] < minH) minH = heights[i];
+      if (heights[i] > maxH) maxH = heights[i];
+    }
+  }
+
   const range = maxH - minH || 1;
+  const basePos = new Float32Array(pos.count * 2);
+  const normalizedHeights = new Float32Array(pos.count);
   for (let i = 0; i < pos.count; i++) {
-    pos.setY(i, ((heights[i] - minH) / range) * HEIGHT_SCALE);
+    basePos[i * 2] = pos.getX(i);
+    basePos[i * 2 + 1] = pos.getZ(i);
+    normalizedHeights[i] = (heights[i] - minH) / range;
+    pos.setY(i, normalizedHeights[i] * HEIGHT_SCALE);
   }
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 
   const heightNorm = new Float32Array(pos.count);
-  for (let i = 0; i < pos.count; i++) {
-    heightNorm[i] = (heights[i] - minH) / range;
-  }
+  heightNorm.set(normalizedHeights);
   geometry.setAttribute('heightNorm', new THREE.BufferAttribute(heightNorm, 1));
 
   loadingMgr.set('Terrain textures', 'Loading');
@@ -1808,14 +4607,17 @@ async function loadTerrain() {
   mesh.position.z -= center.z;
   mesh.position.y -= box.min.y;
 
-  const waterMat = new THREE.MeshPhysicalMaterial({
-    color: 0x3a7bd5, transparent: true, opacity: 0.4,
-    roughness: 0.1, metalness: 0.05, side: THREE.DoubleSide,
-  });
-  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE), waterMat);
+  const waterMat = createOceanWaterMaterial();
+  syncOceanWaterMaterial(waterMat);
+  const waterMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1, WATER_SEGMENTS, WATER_SEGMENTS),
+    waterMat,
+  );
   waterMesh.rotation.x = -Math.PI / 2;
-  waterMesh.position.y = HEIGHT_SCALE * TERRAIN_WATER_HEIGHT_NORM;
+  waterMesh.position.y = HEIGHT_SCALE * terrainWaterHeightNorm;
+  waterMesh.scale.set(TERRAIN_SIZE, TERRAIN_SIZE, 1);
   waterMesh.renderOrder = 1;
+  waterMesh.frustumCulled = false;
   waterMesh.raycast = () => {};
 
   const group = new THREE.Group();
@@ -1830,6 +4632,8 @@ async function loadTerrain() {
     waterMesh,
     forestGuide,
     _gridSegments: segments,
+    _normalizedHeights: normalizedHeights,
+    _basePositions: basePos,
   };
   loadingMgr.set('Terrain', 'Complete');
 }
@@ -1925,14 +4729,18 @@ function loop() {
   syncSkyToCamera();
   if (character) {
     character.mixer.update(delta);
-    updateGameplay(delta);
-    if (!updateVertical(delta)) snapToGround();
+    if (!mapEditorOpen) {
+      updateGameplay(delta);
+      if (!updateVertical(delta)) snapToGround();
+    }
     followCamera(delta);
     updateSunShadow();
   }
   controls.update();
   updateCameraCollision();
-  renderer.render(scene, camera);
+  updateTeleportEffects(delta);
+  updateOceanWater(delta);
+  renderVolumetricClouds(delta);
 }
 loop();
 </script>
